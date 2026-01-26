@@ -300,3 +300,7 @@ short dsm_extend[6][6][6][6] = {\
 { {1,1,1,1,1,0} , {1,1,1,1,1,0} , {1,1,1,1,1,0} , {1,1,1,1,1,0} , {1,1,1,1,1,0} , {1,1,1,1,1,0} } \
 } };
 /*0s in last block to have init score clean!*/
+
+short modified_dsm[6][6][6][6] = {0};
+
+short modified_dsm_extend[6][6][6][6] = {0};

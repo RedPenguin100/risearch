@@ -30,6 +30,7 @@
 #include <ctype.h>
 #include "fasta.h"
 #include <unistd.h>
+#include "set_modified.h"
 
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -592,7 +593,7 @@ usage (char *progname)
   fprintf (stderr, "\t            This option requires -w.\n");
   fprintf (stderr, "\t-l <int>  max trace back length (default: 40)\n");
   fprintf (stderr,
-	   "\t-m <str>  matrix to use, t99 or t04(def) or su95 or su95_noGU or sl04_noGU \n");
+	   "\t-m <str>  matrix to use, t99 or t04(def) or su95 or su95_noGU or sl04_noGU or modified e1 e2\n");
   fprintf (stderr,
 	   "\t-w <str>  weights vector to use, CRISPR_20nt_5p_3p or noweights. \n");
   fprintf (stderr,
@@ -702,7 +703,16 @@ getMat (char *matname, short *bA_nu)
   short *bA_bas, *bA_ext;
   int i;
   extern short dsm_extend[6][6][6][6];
-  if (!strcmp (matname, "t04"))
+  bA_ext = &dsm_extend[0][0][0][0];
+  double e1,e2;
+  if(sscanf(matname, "modified %lf %lf", &e1, &e2) == 2){
+  	set_modified();
+  	extern short modified_dsm[6][6][6][6];
+	extern short modified_dsm_extend[6][6][6][6];
+  	bA_ext = &modified_dsm_extend[0][0][0][0];
+  	bA_bas = &modified_dsm[0][0][0][0];
+  }
+  else if (!strcmp (matname, "t04"))
     {
       extern short dsm_t04[6][6][6][6];
       bA_bas = &dsm_t04[0][0][0][0];
@@ -730,10 +740,10 @@ getMat (char *matname, short *bA_nu)
   else
     {
       fprintf (stderr,
-	       "Undefined matrix, -m needs to be set to either t99 or t04 for RNA-RNA interaction, su95 or su95_noGU for RNA-DNA interaction or sl04_noGU for DNA interaction\n");
+	       "Undefined matrix, -m needs to be set to either t99 or t04 for RNA-RNA interaction, su95 or su95_noGU for RNA-DNA interaction or sl04_noGU for DNA interaction or modified e1 e2 \n");
       exit (1);
     }
-  bA_ext = &dsm_extend[0][0][0][0];
+
 
   /* create dsm from   dsm_base - d * dsm_extend   */
   for (i = 0; i < 1296; i++)
@@ -1055,8 +1065,8 @@ RIs (unsigned char *qseq,	/* query sequence - numeric representation */
 
   /* explicitly handling of the boundary condition since i-2 is not defined for i = 1
      NOT needed anymore, is now just 0 anyway
-     Ix[1][0] = 0; //MAX(0, dsm[GAP][qseq[0]][GAP][GAP]); 
-     Iy[1][0] = M[1][0] = NEGINF; // not possible to occure 
+     Ix[1][0] = 0; //MAX(0, dsm[GAP][qseq[0]][GAP][GAP]);
+     Iy[1][0] = M[1][0] = NEGINF; // not possible to occure
    */
   for (i = 1; i <= m; i++)
     {
@@ -1066,7 +1076,7 @@ RIs (unsigned char *qseq,	/* query sequence - numeric representation */
 
   /*init first col (i=0) --- this is ROW - change throughout!?
      Iy[0][1] = 0; // MAX(0, dsm[GAP][GAP][GAP][tseq[0]]);
-     Ix[0][1] = M[0][1] = NEGINF; 
+     Ix[0][1] = M[0][1] = NEGINF;
    */
   for (j = 1; j <= n; j++)
     {
@@ -1172,7 +1182,7 @@ RIs (unsigned char *qseq,	/* query sequence - numeric representation */
       /* or start new ali, begin with gap -- forbidden ! */
       /* nVal = dsm[GAP][GAP][GAP][tseq[j-1]]; */
       Iy[1][j] = max3 (mVal, yVal, 0);	/*removed option nVal */
-/* do not allow alignments ending in gap 
+/* do not allow alignments ending in gap
     tmp = Iy[1][j] + dsm[GAP][GAP][tseq[j-1]][GAP];
     if (tmp > maxval) {
       maxval = tmp;
@@ -1630,7 +1640,7 @@ RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric representation */
 		       Ix[1][i - 1] !=
 		       0 ? Ix[1][i - 1] +
 		       dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] : -1
-		       /* OR start new alignment that starts in gap, reflected by (-, Xi; -, -) 
+		       /* OR start new alignment that starts in gap, reflected by (-, Xi; -, -)
 		          dsm[GAP][qseq[i-1]][GAP][GAP] */
 	);
 /* do NOT allow max other than match state!? -- however (Xi, -; -, -) is positive!?
@@ -1762,7 +1772,7 @@ RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric representation */
 				    /*extend existing gap, add (Xi-1, Xi; -, -) */
 				    Ix[currentRow][i - 1] +
 				    dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP]
-				    /* start new alignment - starts with gap LEGAL!? 
+				    /* start new alignment - starts with gap LEGAL!?
 				       dsm[GAP][qseq[i-1]][GAP][GAP] */
 	    );
 /* only M[][] can be max, point of backtrack...
@@ -1783,7 +1793,7 @@ RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric representation */
 				    Iy[lastRow][i] +
 				    dsm[GAP][GAP][tseq[n - j + 1]][tseq
 								   [n - j]]
-				    /* start new alignment - starts with gap LEGAL!? 
+				    /* start new alignment - starts with gap LEGAL!?
 				       dsm[GAP][GAP][GAP][tseq[n-j]] */
 	    );
 /*  only M[][] can be max, point of backtrack...
@@ -1889,7 +1899,12 @@ RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric representation */
 #endif
       nt_count =
 	maxHit->qend - maxHit->qbeg + 1 + maxHit->tend - maxHit->tbeg + 1;
-      if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
+      //
+      double e1,e2;
+      if(sscanf(matname, "modified %lf %lf", &e1, &e2) == 2){
+        energy = (maxHit->max + extensionpenalty * nt_count - e1) / (-e2);
+      }
+      else if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
 	{
 	  energy =
 	    (maxHit->max + extensionpenalty * nt_count - 559.0) / (-100.0);
@@ -1914,7 +1929,7 @@ RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric representation */
 		      tmpQbeg + maxHit->qend - 1, n - maxj + maxHit->tbeg,
 		      n - maxj + maxHit->tend, energy);
 /* to be consistent with other output:
-        printf("%d\t%d\t%d\t%d\t%.2f\t%s\n", tmpQbeg+maxHit->qbeg-1, tmpQbeg+maxHit->qend-1, n-maxj+maxHit->tend, n-maxj+maxHit->tbeg, energy, maxHit->ali_ia); 
+        printf("%d\t%d\t%d\t%d\t%.2f\t%s\n", tmpQbeg+maxHit->qbeg-1, tmpQbeg+maxHit->qend-1, n-maxj+maxHit->tend, n-maxj+maxHit->tbeg, energy, maxHit->ali_ia);
 */
 	    }
 	  else if (printShort == 2)
@@ -2032,7 +2047,11 @@ RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric representation */
 
 	  nt_count =
 	    maxHit->qend - maxHit->qbeg + 1 + maxHit->tend - maxHit->tbeg + 1;
-	  if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
+	  double e1,e2;
+    if(sscanf(matname, "modified %lf %lf", &e1, &e2) == 2){
+        energy = (maxHit->max + extensionpenalty * nt_count - e1) / (-e2);
+      }
+	  else if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
 	    {
 	      energy =
 		(maxHit->max + extensionpenalty * nt_count -
@@ -2567,8 +2586,11 @@ RIs_force_start_end_weighted (unsigned char *qseq,	/* query sequence - numeric r
 	    }
 	}
       printf ("%s\t%s\n", query_alignment, target_alignment);
-
-      if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
+	  double e1,e2;
+    	if(sscanf(matname, "modified %lf %lf", &e1, &e2) == 2){
+        energy = (max_score - force_start_val - e1) / (e2);
+      }
+   else if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
 	{
 	  energy = (max_score - force_start_val - 559.0) / (-100.0);
 	}

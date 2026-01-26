@@ -9,7 +9,7 @@ char buffer[32000];
 extern short modified_dsm[6][6][6][6];
 extern short modified_dsm_extend[6][6][6][6];
 
-void set_modified_dsm(short *p_dsm, const char *csv_filename) {
+void set_modified(short *p_dsm, const char *csv_filename) {
     FILE *file;
     short number;
     file = fopen(csv_filename, "r");

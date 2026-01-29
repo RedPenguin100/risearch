@@ -152,6 +152,8 @@ usage (const char *cmd)
   fprintf (stderr, "                 if you set c>0, please also set p>0 to avoid overlaps)\n");
   fprintf (stderr, "  -x <float>, --seed_energy=F\n");
   fprintf (stderr, "                 set energy per length threshold that filters seeds (default=0)\n");
+  fprintf (stderr, "  -R                         \n");
+  fprintf (stderr, "                 transpose the scoring matrix");
   fprintf (stderr, "\n");
   exit (1);
 }

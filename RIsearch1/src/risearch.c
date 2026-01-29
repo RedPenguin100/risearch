@@ -87,6 +87,7 @@ void set_alignment_symbols (char query_nt, char target_nt,
 char *mat_name = "t04", *seq1file_name, *seq2file_name, *seq1_cli, *seq2_cli;
 int tblen = 40;			/* trace-back length, that many nucleotides before 'maxHit' */
 int extPen = 0;			/* extension penalty; used to compute dsm */
+int transpose_matrix = 0;
 int force_start_val = -1;	/* values used to unitialize the first column of the M matrix. If sufficiently high, can force the interaction to start at position 0 of the DNA. */
 int vicinity = 0;		/* to omit neighboring hits (subalignments) */
 char printShort = 0;		/* switch p to print 1 line per IA, only pos&E, not IA itself */
@@ -531,6 +532,8 @@ usage (char *progname)
 	   "\t            Also the 'best hit' per query/target pair might be filtered out, appears only once if at all (and not necessarily as first).\n");
   fprintf (stderr,
 	   "\t-p          switch for short output, for backwards compatibility, same as -p1\n");
+  fprintf(stderr,
+  		"\t-R         Transpose the scoring matrix");
   fprintf (stderr, "\t-p[1-3]     different shorter output modes:\n");
   fprintf (stderr,
 	   "\t\t-p1     one line per hit, incl. interaction string, still header for each pair (query / target)\n");
@@ -548,7 +551,7 @@ void
 getArgs (int argc, char *argv[])
 {
   char c;
-  while ((c = getopt (argc, argv, "1q:t:Q:T:d:X:m:s:e:n:w:l:f:p::")) != -1)
+  while ((c = getopt (argc, argv, "1q:t:Q:T:d:X:m:s:e:n:w:l:f:p:R::")) != -1)
     switch (c)
       {
 		case '1':
@@ -557,6 +560,9 @@ getArgs (int argc, char *argv[])
       case 'q':
 	seq1file_name = optarg;
 	break;
+  	  case 'R':
+    transpose_matrix = 1;
+  	break;
       case 't':
 	seq2file_name = optarg;
 	break;
@@ -626,7 +632,8 @@ int
 getMat (char *matname, short *bA_nu)
 {
   short *bA_bas, *bA_ext;
-  int i;
+  int i, j, k, l;
+  int src_idx, dest_idx;
   extern short dsm_extend[6][6][6][6];
   if (!strcmp (matname, "t04"))
     {
@@ -660,11 +667,30 @@ getMat (char *matname, short *bA_nu)
     }
   bA_ext = &dsm_extend[0][0][0][0];
 
-  /* create dsm from   dsm_base - d * dsm_extend   */
-  for (i = 0; i < 1296; i++)
-    {
-      *(bA_nu + i) = *(bA_bas + i) - extPen * *(bA_ext + i);	/* bA_nu[i] =  ... also works */
-    }
+	if (transpose_matrix) {
+		for (i = 0; i < 6; ++i) {
+			for (j = 0; j < 6; ++j) {
+				for (k = 0; k < 6; ++k) {
+					for (l = 0; l < 6; ++l) {
+						// Source: [i][j][k][l]
+						src_idx = (i * 6 * 6 * 6) + (j * 6 * 6) + (k * 6) + l;
+
+						// Dest: [k][l][i][j] - swapping i,j with k,l
+						dest_idx = (k * 6 * 6 * 6) + (l * 6 * 6) + (i * 6) + j;
+
+						*(bA_nu + dest_idx) = *(bA_bas + src_idx) - extPen * *(bA_ext + src_idx);
+					}
+				}
+			}
+		}
+	} else {
+		/* create dsm from   dsm_base - d * dsm_extend   */
+		for (i = 0; i < 1296; i++)
+		{
+			*(bA_nu + i) = *(bA_bas + i) - extPen * *(bA_ext + i);	/* bA_nu[i] =  ... also works */
+		}
+	}
+
   return 0;
 }
 

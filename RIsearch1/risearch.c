@@ -87,6 +87,7 @@ void set_alignment_symbols (char query_nt, char target_nt,
 char *mat_name = "t04", *seq1file_name, *seq2file_name, *seq1_cli, *seq2_cli;
 int tblen = 40;			/* trace-back length, that many nucleotides before 'maxHit' */
 int extPen = 0;			/* extension penalty; used to compute dsm */
+int transpose_matrix = 0;
 int force_start_val = -1;	/* values used to unitialize the first column of the M matrix. If sufficiently high, can force the interaction to start at position 0 of the DNA. */
 int vicinity = 0;		/* to omit neighboring hits (subalignments) */
 char printShort = 0;		/* switch p to print 1 line per IA, only pos&E, not IA itself */
@@ -625,9 +626,12 @@ void
 getArgs (int argc, char *argv[])
 {
   char c;
-  while ((c = getopt (argc, argv, "q:t:Q:T:d:X:m:s:e:n:w:l:f:p::")) != -1)
+  while ((c = getopt (argc, argv, "q:t:Q:T:d:X:m:s:e:n:w:l:f:p:R::")) != -1)
     switch (c)
       {
+  	  case 'R':
+    transpose_matrix = 1;
+    break;
       case 'q':
 	seq1file_name = optarg;
 	break;
@@ -700,7 +704,9 @@ int
 getMat (char *matname, short *bA_nu)
 {
   short *bA_bas, *bA_ext;
-  int i;
+  int i,j,k,l;
+  int src_idx, dest_idx;
+
   extern short dsm_extend[6][6][6][6];
   if (!strcmp (matname, "t04"))
     {
@@ -733,13 +739,36 @@ getMat (char *matname, short *bA_nu)
 	       "Undefined matrix, -m needs to be set to either t99 or t04 for RNA-RNA interaction, su95 or su95_noGU for RNA-DNA interaction or sl04_noGU for DNA interaction\n");
       exit (1);
     }
-  bA_ext = &dsm_extend[0][0][0][0];
+	bA_ext = &dsm_extend[0][0][0][0];
 
-  /* create dsm from   dsm_base - d * dsm_extend   */
-  for (i = 0; i < 1296; i++)
-    {
-      *(bA_nu + i) = *(bA_bas + i) - extPen * *(bA_ext + i);	/* bA_nu[i] =  ... also works */
-    }
+	if (transpose_matrix)
+	{
+		/* Option 1: Transpose logic [k][l][i][j] = [i][j][k][l] */
+		for (i = 0; i < 6; i++) {
+			for (j = 0; j < 6; j++) {
+				for (k = 0; k < 6; k++) {
+					for (l = 0; l < 6; l++) {
+						// Source: [i][j][k][l]
+						src_idx = (i * 216) + (j * 36) + (k * 6) + l;
+
+						// Dest: [k][l][i][j] (swapping Query pair i,j with Target pair k,l)
+						dest_idx = (k * 216) + (l * 36) + (i * 6) + j;
+
+						*(bA_nu + dest_idx) = *(bA_bas + src_idx) - extPen * *(bA_ext + src_idx);
+					}
+				}
+			}
+		}
+	}
+	else
+	{
+		/* Original linear copy */
+		for (i = 0; i < 1296; i++)
+		{
+			*(bA_nu + i) = *(bA_bas + i) - extPen * *(bA_ext + i);
+		}
+	}
+
   return 0;
 }
 

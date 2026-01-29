@@ -87,7 +87,7 @@ void set_alignment_symbols (char query_nt, char target_nt,
 char *mat_name = "t04", *seq1file_name, *seq2file_name, *seq1_cli, *seq2_cli;
 int tblen = 40;			/* trace-back length, that many nucleotides before 'maxHit' */
 int extPen = 0;			/* extension penalty; used to compute dsm */
-int transpose_matrix = 1;
+int transpose_matrix = 0;
 int force_start_val = -1;	/* values used to unitialize the first column of the M matrix. If sufficiently high, can force the interaction to start at position 0 of the DNA. */
 int vicinity = 0;		/* to omit neighboring hits (subalignments) */
 char printShort = 0;		/* switch p to print 1 line per IA, only pos&E, not IA itself */

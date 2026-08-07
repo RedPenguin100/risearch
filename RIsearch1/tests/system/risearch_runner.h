@@ -11,14 +11,14 @@
 #include <string>
 #include <vector>
 
-extern "C" {
+#include <unistd.h>  // optind
+
+// risearch.cpp is compiled as C++ with main renamed, so this has C++ linkage.
 int risearch1_main(int argc, char *argv[]);
 
 // getopt keeps its parse position in a global. Setting it to 0 makes glibc
 // re-initialise completely on the next call, which is what lets a second test
 // parse its own arguments correctly.
-extern int optind;
-}
 
 namespace risearch_test {
 

@@ -33,7 +33,8 @@ set(RISEARCH1_WARNINGS -Wall -pedantic -fpermissive)
 set(RISEARCH1_BIN ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 
 # --- the CLI, optimised: what the wheel ships -------------------------------
-add_executable(RIsearch ${RISEARCH1_SOURCES})
+add_executable(RIsearch ${RISEARCH1_SOURCES}
+        src/memory/MallocRAII.h)
 target_include_directories(RIsearch PRIVATE ${RISEARCH1_INCLUDES})
 target_compile_definitions(RIsearch PRIVATE ${RISEARCH1_DEFINES})
 target_compile_options(RIsearch PRIVATE ${RISEARCH1_WARNINGS} -O3)

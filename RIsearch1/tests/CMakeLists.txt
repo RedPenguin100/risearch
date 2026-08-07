@@ -12,6 +12,7 @@ add_executable(risearch1_tests
     test_operations.cpp
     test_alignment_symbols.cpp
     test_dsm.cpp
+    test_fasta.cpp
     system/test_end_to_end.cpp
         test_string_utils.cpp
 )

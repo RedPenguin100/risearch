@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdio.h>
+
 #include <stdlib.h>
 
 static int** allocIntMatrix(int rows, int cols)

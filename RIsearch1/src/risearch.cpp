@@ -27,6 +27,7 @@
 
 #include <unistd.h>
 
+
 extern "C" {
 #include "fasta.h"
 #include "nucleotide.h"
@@ -36,6 +37,7 @@ extern "C" {
 #include "linspace.h"
 }
 
+#include "memory/MallocRAII.hpp"
 #include "FastaRAII.h"
 
 /* values filled in by getArgs from the command line */
@@ -44,7 +46,6 @@ static config_st config;
 int main(int argc, char *argv[]) {
     unsigned long len_seq1, len_seq2;
     char *one, *two;
-    unsigned char *qseqIx, *tseqIx;
 
     char *nameQ, *nameT;
     short dsm[6][6][6][6];
@@ -63,13 +64,12 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Target file %s is not readable\n", config.seq2_file_name);
             return -1;
         }
-
         while (ReadFASTA(target_fasta.handle(), &two, &nameT, &len_seq2)) {
             count_q = 0;
             count_t++;
+            MallocRAII<unsigned char> tseqIx(len_seq2);
             /*can be done already when reading in first place */
-            tseqIx = malloc((len_seq2) * sizeof *tseqIx);
-            check = seq2ix(len_seq2, two, tseqIx, nameT, "target");
+            check = seq2ix(len_seq2, two, tseqIx.get(), nameT, "target");
             if (check > 0)
                 len_seq2 -= check; /*removed gap characters */
             if (check < 0)
@@ -81,15 +81,14 @@ int main(int argc, char *argv[]) {
                 FastaRAII query_fasta(config.seq1_file_name);
                 if (nullptr == query_fasta.handle()) {
                     fprintf(stderr, "Query file %s is not readable\n", config.seq1_file_name);
-                    free(tseqIx);
                     free(nameT);
                     return -1;
                 }
                 while (ReadFASTA(query_fasta.handle(), &one, &nameQ, &len_seq1)) {
                     count_q++;
+                    MallocRAII<unsigned char> qseqIx(len_seq1);
 
-                    qseqIx = malloc((len_seq1) * sizeof *qseqIx);
-                    check = seq2ix(len_seq1, one, qseqIx, nameQ, "query");
+                    check = seq2ix(len_seq1, one, qseqIx.get(), nameQ, "query");
                     if (check > 0)
                         len_seq1 -= check; /*removed gap characters */
                     if (check < 0)
@@ -117,23 +116,23 @@ int main(int argc, char *argv[]) {
                             exit(1);
                         }
                         if (config.all_vs_all || count_t == count_q) {
-                            RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx, tseqIx,
+                            RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx.get(),
+                                                     tseqIx.get(),
                                                      len_seq1, len_seq2, dsm, config.mat_name);
                         }
                     } else {
                         if (config.all_vs_all || count_t == count_q) {
-                            RIs_linSpace(qseqIx, tseqIx, len_seq1, len_seq2, dsm, config.extension_penalty,
+                            RIs_linSpace(qseqIx.get(), tseqIx.get(), len_seq1, len_seq2, dsm, config.extension_penalty,
                                          config.min_score, nameQ, nameT, config.mat_name, &config);
                         }
                     }
-                    free(qseqIx);
                     free(nameQ);
                 }
             } else if (config.seq1_cli) {
                 /* query given as command line parameter */
                 len_seq1 = strlen(config.seq1_cli);
-                qseqIx = malloc((len_seq1) * sizeof *qseqIx);
-                check = seq2ix(len_seq1, config.seq1_cli, qseqIx, "from command line", "query");
+                MallocRAII<unsigned char> qseqIx(len_seq1);
+                check = seq2ix(len_seq1, config.seq1_cli, qseqIx.get(), "from command line", "query");
                 if (check > 0)
                     len_seq1 -= check; /*removed gap characters */
                 if (check < 0)
@@ -157,27 +156,26 @@ int main(int argc, char *argv[]) {
                             stderr, "Options -d -s -n -l -e -p are not available in combination with options -f -w \n");
                         exit(1);
                     }
-                    RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx, tseqIx, len_seq1,
+                    RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx.get(), tseqIx.get(),
+                                             len_seq1,
                                              len_seq2, dsm, config.mat_name);
                 } else {
-                    RIs_linSpace(qseqIx, tseqIx, len_seq1, len_seq2, dsm, config.extension_penalty, config.min_score,
+                    RIs_linSpace(qseqIx.get(), tseqIx.get(), len_seq1, len_seq2, dsm, config.extension_penalty,
+                                 config.min_score,
                                  "from_cli", nameT, config.mat_name, &config);
                 }
-                free(qseqIx);
             } else {
                 fprintf(stderr, "No query seq given!");
                 /* is caught in getArg already -- alternative run seq against itself!? */
             }
 
-            free(tseqIx);
             free(nameT);
         }
     } else if (config.seq2_cli) {
         /*target given as command line parameter */
-
+        MallocRAII<unsigned char> tseqIx(len_seq2);
         len_seq2 = strlen(config.seq2_cli);
-        tseqIx = malloc((len_seq2) * sizeof *tseqIx);
-        check = seq2ix(len_seq2, config.seq2_cli, tseqIx, "from command line", "target");
+        check = seq2ix(len_seq2, config.seq2_cli, tseqIx.get(), "from command line", "target");
         if (check > 0)
             len_seq2 -= check; /*removed gap characters */
         if (check < 0)
@@ -189,12 +187,12 @@ int main(int argc, char *argv[]) {
             FastaRAII query_fasta(config.seq1_file_name);
             if (nullptr == query_fasta.handle()) {
                 fprintf(stderr, "Query file %s is not readable\n", config.seq1_file_name);
-                free(tseqIx);
                 return -1;
             }
             while (ReadFASTA(query_fasta.handle(), &one, &nameQ, &len_seq1)) {
-                qseqIx = malloc((len_seq1) * sizeof *qseqIx);
-                check = seq2ix(len_seq1, one, qseqIx, nameQ, "query");
+                MallocRAII<unsigned char> qseqIx(len_seq1);
+
+                check = seq2ix(len_seq1, one, qseqIx.get(), nameQ, "query");
                 if (check > 0)
                     len_seq1 -= check; /*removed gap characters */
                 if (check < 0)
@@ -220,21 +218,22 @@ int main(int argc, char *argv[]) {
                             stderr, "Options -d -s -n -l -e -p are not available in combination with options -f -w \n");
                         exit(1);
                     }
-                    RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx, tseqIx, len_seq1,
+                    RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx.get(), tseqIx.get(),
+                                             len_seq1,
                                              len_seq2, dsm, config.mat_name);
                 } else {
-                    RIs_linSpace(qseqIx, tseqIx, len_seq1, len_seq2, dsm, config.extension_penalty, config.min_score,
+                    RIs_linSpace(qseqIx.get(), tseqIx.get(), len_seq1, len_seq2, dsm, config.extension_penalty,
+                                 config.min_score,
                                  nameQ, "from_cli", config.mat_name, &config);
                 }
-                free(qseqIx);
                 free(nameQ);
             }
         } else if (config.seq1_cli) {
             /* query given as command line parameter */
+            MallocRAII<unsigned char> qseqIx(len_seq1);
 
             len_seq1 = strlen(config.seq1_cli);
-            qseqIx = malloc((len_seq1) * sizeof *qseqIx);
-            check = seq2ix(len_seq1, config.seq1_cli, qseqIx, "from command line", "query");
+            check = seq2ix(len_seq1, config.seq1_cli, qseqIx.get(), "from command line", "query");
             if (check > 0)
                 len_seq1 -= check; /*removed gap characters */
             if (check < 0)
@@ -257,19 +256,18 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "Options -d -s -n -l -e -p are not available in combination with options -f -w \n");
                     exit(1);
                 }
-                RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx, tseqIx, len_seq1, len_seq2,
+                RIs_force_start_end_init(config.force_start_val, config.pos_weights, qseqIx.get(), tseqIx.get(),
+                                         len_seq1, len_seq2,
                                          dsm, config.mat_name);
             } else {
-                RIs_linSpace(qseqIx, tseqIx, len_seq1, len_seq2, dsm, config.extension_penalty, config.min_score,
+                RIs_linSpace(qseqIx.get(), tseqIx.get(), len_seq1, len_seq2, dsm, config.extension_penalty,
+                             config.min_score,
                              "from_cli", "from_cli", config.mat_name, &config);
             }
-            free(qseqIx);
         } else {
             fprintf(stderr, "No query seq given!");
             /* is caught in getArg already -- alternative run seq against itself!? */
         }
-
-        free(tseqIx);
     } else {
         fprintf(stderr, "No target seq given!");
         /* is caught in getArg already -- alternative run seq against itself!? */

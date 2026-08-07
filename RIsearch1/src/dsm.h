@@ -1,5 +1,9 @@
 #pragma once
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 static int getMat (const char *matname, short *bA_nu, int extPen, int transpose_matrix)
 {
     short *bA_bas, *bA_ext;

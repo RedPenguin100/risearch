@@ -1,5 +1,11 @@
 #pragma once
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include "debug_print.h"
+
 #include "matrix_operations.h"
 #include "force_start.h"
 #include "nucleotide.h"

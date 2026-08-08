@@ -1,0 +1,26 @@
+# Matches the style of the C++ written since the refactor started -- four-space
+# indent, attached braces, pointer bound to the name. The inherited C is still in
+# GNU indent style, so this is deliberately not run over the whole tree: it
+# applies to files as they are rewritten, which keeps diffs readable.
+Language: Cpp
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+ColumnLimit: 100
+PointerAlignment: Right
+ReferenceAlignment: Right
+AccessModifierOffset: -4
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+BreakBeforeBraces: Attach
+SpaceAfterTemplateKeyword: false
+AlwaysBreakTemplateDeclarations: Yes
+
+SortIncludes: CaseSensitive
+IncludeBlocks: Preserve
+
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 2

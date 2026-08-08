@@ -21,7 +21,7 @@ file(GLOB RISEARCH1_SOURCES CONFIGURE_DEPENDS
      ${RISEARCH1_SRC}/*.c ${RISEARCH1_SRC}/*.cpp
      ${RISEARCH1_SRC}/fasta/*.c ${RISEARCH1_SRC}/fasta/*.cpp)
 
-set(RISEARCH1_INCLUDES ${RISEARCH1_SRC} ${RISEARCH1_SRC}/fasta)
+set(RISEARCH1_INCLUDES ${RISEARCH1_SRC} ${RISEARCH1_SRC}/fasta ${RISEARCH1_SRC}/util)
 set(RISEARCH1_DEFINES MATPATH="${RISEARCH_MATPATH}" RISVERSION=1)
 # -fpermissive downgrades the void*-to-T* conversions that C allows implicitly and
 # C++ does not. It is scaffolding for the C-to-C++ move: each malloc site wants a

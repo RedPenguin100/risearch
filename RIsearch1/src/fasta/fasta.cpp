@@ -93,10 +93,14 @@
  *
  *           CloseFASTA() "always succeeds" and returns void.
  */
+#include "memory/MallocRAII.hpp"
+
 FASTAFILE *
 OpenFASTA(const char *seqfile)
 {
   FASTAFILE *ffp;
+
+  MallocRAII
 
   ffp = malloc(sizeof(FASTAFILE));
   if (strcmp(seqfile, "-")) { /*returns 0/FALSE if they are same! */

@@ -28,14 +28,12 @@
 #include <unistd.h>
 
 
-extern "C" {
 #include "fasta.h"
 #include "nucleotide.h"
 #include "dsm.h"
 #include "cli.h"
 #include "force_start.h"
 #include "linspace.h"
-}
 
 #include "memory/MallocRAII.hpp"
 #include "FastaRAII.h"

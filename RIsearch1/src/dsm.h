@@ -6,7 +6,7 @@
 
 static int getMat (const char *matname, short *bA_nu, int extPen, int transpose_matrix)
 {
-    short *bA_bas, *bA_ext;
+    short *bA_bas;
     extern short dsm_extend[6][6][6][6];
     if (!strcmp (matname, "t04"))
     {
@@ -38,7 +38,7 @@ static int getMat (const char *matname, short *bA_nu, int extPen, int transpose_
         fprintf(stderr, "Undefined matrix (%s), -m needs to be set to either t99 or t04 for RNA-RNA interaction, su95 or su95_noGU for RNA-DNA interaction or slh04_noGU for DNA interaction\n", matname);
         exit (1);
     }
-    bA_ext = &dsm_extend[0][0][0][0];
+    short* bA_ext = &dsm_extend[0][0][0][0];
 
     if (transpose_matrix) {
         for (auto i = 0u; i < 6u; ++i) {

@@ -14,6 +14,7 @@ add_executable(risearch1_tests
     test_dsm.cpp
     test_fasta.cpp
     system/test_end_to_end.cpp
+    system/test_force_start.cpp
         test_string_utils.cpp
 )
 target_link_libraries(risearch1_tests PRIVATE risearch1_core GTest::gtest_main)

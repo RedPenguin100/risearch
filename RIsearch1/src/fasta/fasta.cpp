@@ -100,8 +100,6 @@ OpenFASTA(const char *seqfile)
 {
   FASTAFILE *ffp;
 
-  MallocRAII
-
   ffp = malloc(sizeof(FASTAFILE));
   if (strcmp(seqfile, "-")) { /*returns 0/FALSE if they are same! */
     ffp->fp = fopen(seqfile, "r");              /* Assume seqfile exists & readable!   */

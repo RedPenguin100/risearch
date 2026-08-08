@@ -1,0 +1,17 @@
+# CLion on Windows writes CRLF into the WSL filesystem; normalise on the way in.
+* text=auto
+
+# Explicitly text, so line endings never depend on the editor.
+*.c    text
+*.cpp  text
+*.h    text
+*.hpp  text
+*.txt  text
+*.md   text
+*.yml  text
+*.fa   text
+*.fna  text
+
+# Binary, never touched.
+*.pdf  binary
+*.gz   binary

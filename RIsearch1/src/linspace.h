@@ -536,7 +536,6 @@ static int RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric repres
   IA *maxHit;
 
   int hitcount = 0;
-  double energy;
 
 #if VERBOSE>1
   int tmpi;
@@ -897,22 +896,10 @@ static int RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric repres
 #endif
       nt_count =
 	maxHit->qend - maxHit->qbeg + 1 + maxHit->tend - maxHit->tbeg + 1;
-      if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
-	{
-	  energy =
-	    (maxHit->max + extensionpenalty * nt_count - 559.0) / (-100.0);
-	}
-      else if (!(strcmp (matname, "su95"))
-	       || !(strcmp (matname, "su95_noGU")))
-	{
-	  energy =
-	    (maxHit->max + extensionpenalty * nt_count - 249.0) / (-100.0);
-	}
-      else
-	{
-	  energy =
-	    (maxHit->max + extensionpenalty * nt_count - 363.0) / (-100.0);
-	}
+    const auto reference = reference_from_matrix(matname);
+  	const auto energy = (maxHit->max + extensionpenalty * nt_count - reference) / (-100.0);
+
+
     /** TODO :: use maxHit->max OR maxval==hits_score[maxj-1] in output !?!? **/
       if (energy <= config->max_energy)
 	{
@@ -1038,27 +1025,10 @@ static int RIs_linSpace (unsigned char *qseq,	/* query sequence - numeric repres
 
 	  RIs (tmpQseq, tmpTseq, tmpQlen, tmpTlen, dsm, maxHit, config);
 
-	  nt_count =
-	    maxHit->qend - maxHit->qbeg + 1 + maxHit->tend - maxHit->tbeg + 1;
-	  if (!(strcmp (matname, "t99")) || !(strcmp (matname, "t04")))
-	    {
-	      energy =
-		(maxHit->max + extensionpenalty * nt_count -
-		 559.0) / (-100.0);
-	    }
-	  else if (!(strcmp (matname, "su95"))
-		   || !(strcmp (matname, "su95_noGU")))
-	    {
-	      energy =
-		(maxHit->max + extensionpenalty * nt_count -
-		 249.0) / (-100.0);
-	    }
-	  else
-	    {
-	      energy =
-		(maxHit->max + extensionpenalty * nt_count -
-		 363.0) / (-100.0);
-	    }
+	  nt_count = maxHit->qend - maxHit->qbeg + 1 + maxHit->tend - maxHit->tbeg + 1;
+      	const auto reference = reference_from_matrix(matname);
+      	energy = (maxHit->max + extensionpenalty * nt_count -reference) / (-100.0);
+
 
 /* TODO anything about this or ignore !?
       if (maxHit->max != hits_score[j]) {

@@ -18,8 +18,20 @@ class QueryProfile {
 public:
     QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6])
         : m_stride(m + 1), m_terms(DSM_SIDE * DSM_SIDE * (m + 1)),
-          m_ix_from_m(DSM_SIDE * DSM_SIDE * (m + 1)), m_ix_extend(m + 1)
+          m_ix_from_m(DSM_SIDE * DSM_SIDE * (m + 1)), m_ix_extend(m + 1),
+          m_lane_stride((m + 8) / 8 * 8)
     {
+        /* Every lane's element 2 -- where the sweep's vector loads start -- sits on a
+           32-byte boundary: the block is aligned, shifted by 2, and the stride is a
+           whole number of 32-byte groups. */
+        void* raw = nullptr;
+        if (posix_memalign(&raw, 32,
+                           (DSM_SIDE * DSM_SIDE * 6 * m_lane_stride + 8) * sizeof(int)) != 0) {
+            raw = nullptr;
+        }
+        m_lane_block.reset(static_cast<int*>(raw));
+        m_lanes = m_lane_block.get() + 6;
+
         /* No target dependence: a query bulge over a gap on both sides. */
         for (auto i = 2u; i <= m; i++) {
             m_ix_extend[i] = dsm[query_sequence[i - 2]][query_sequence[i - 1]][GAP][GAP];
@@ -33,6 +45,7 @@ public:
                 m_iy_extend[ctx] = dsm[GAP][GAP][t_prev][t_cur];
 
                 RowTerms* const terms = m_terms.get() + ctx * m_stride;
+                int* const lane = m_lanes + ctx * 6 * m_lane_stride;
                 for (auto i = 1u; i <= m; i++) {
                     const auto q_cur = query_sequence[i - 1];
                     /* Column 1 has no predecessor, so the q_prev terms are never
@@ -47,9 +60,38 @@ public:
                     terms[i].close = dsm[q_cur][GAP][t_cur][GAP];
                     m_ix_from_m[ctx * m_stride + i] = dsm[q_prev][q_cur][t_cur][GAP];
                     terms[i].iy_from_m = dsm[q_cur][GAP][t_prev][t_cur];
+
+                    lane[0 * m_lane_stride + i] = terms[i].m_from_m;
+                    lane[1 * m_lane_stride + i] = terms[i].m_from_ix;
+                    lane[2 * m_lane_stride + i] = terms[i].m_from_iy;
+                    lane[3 * m_lane_stride + i] = terms[i].m_open;
+                    lane[4 * m_lane_stride + i] = terms[i].close;
+                    lane[5 * m_lane_stride + i] = terms[i].iy_from_m;
                 }
             }
         }
+    }
+
+    /* One pointer per dsm term, each run contiguous in i, so the sweep's loads
+       are unit-stride. */
+    struct RowLanes {
+        const int* m_from_m;
+        const int* m_from_ix;
+        const int* m_from_iy;
+        const int* m_open;
+        const int* close;
+        const int* iy_from_m;
+    };
+
+    RowLanes lanes(unsigned ctx) const
+    {
+        const int* const b = m_lanes + ctx * 6 * m_lane_stride;
+        return {b,
+                b + m_lane_stride,
+                b + 2 * m_lane_stride,
+                b + 3 * m_lane_stride,
+                b + 4 * m_lane_stride,
+                b + 5 * m_lane_stride};
     }
 
     static unsigned context(unsigned t_prev, unsigned t_cur) { return t_prev * DSM_SIDE + t_cur; }
@@ -67,5 +109,8 @@ private:
     MallocRAII<RowTerms> m_terms;
     MallocRAII<int> m_ix_from_m;
     MallocRAII<int> m_ix_extend;
+    std::uint32_t m_lane_stride;
+    MallocRAII<int> m_lane_block;
+    int* m_lanes{};
     int m_iy_extend[DSM_SIDE * DSM_SIDE]{};
 };

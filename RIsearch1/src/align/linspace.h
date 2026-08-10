@@ -16,7 +16,56 @@
 #include "optimization/RowTerms.h"
 
 
-static void
+/* Pass 1 of the sweep: M and Iy for one target row. Both read only the previous
+   row, so every i is independent. The rows and the profile lanes are distinct
+   allocations, which __restrict states so no runtime alias test is emitted. */
+__attribute__((always_inline)) static inline int
+RIs_sweep_M_Iy(std::uint32_t m, int* __restrict m_cur, int* __restrict iy_cur,
+               const int* __restrict m_last, const int* __restrict ix_last,
+               const int* __restrict iy_last, const int* __restrict t_from_m,
+               const int* __restrict t_from_ix, const int* __restrict t_from_iy,
+               const int* __restrict t_open, const int* __restrict t_close,
+               const int* __restrict t_iy_from_m, int iy_ext, int row_max)
+{
+    m_cur = static_cast<int*>(__builtin_assume_aligned(m_cur + 2, 32)) - 2;
+    iy_cur = static_cast<int*>(__builtin_assume_aligned(iy_cur + 2, 32)) - 2;
+    m_last = static_cast<const int*>(__builtin_assume_aligned(m_last + 2, 32)) - 2;
+    t_from_m = static_cast<const int*>(__builtin_assume_aligned(t_from_m + 2, 32)) - 2;
+    t_from_ix = static_cast<const int*>(__builtin_assume_aligned(t_from_ix + 2, 32)) - 2;
+    t_from_iy = static_cast<const int*>(__builtin_assume_aligned(t_from_iy + 2, 32)) - 2;
+    t_open = static_cast<const int*>(__builtin_assume_aligned(t_open + 2, 32)) - 2;
+    t_close = static_cast<const int*>(__builtin_assume_aligned(t_close + 2, 32)) - 2;
+    t_iy_from_m = static_cast<const int*>(__builtin_assume_aligned(t_iy_from_m + 2, 32)) - 2;
+
+    for (auto i = 2u; i <= m; i++) {
+        const int m_prev = m_last[i - 1];
+        const int m_from_m = m_prev + t_from_m[i];
+        m_cur[i] = max4(
+            /* coming from a match */
+            m_prev != 0 ? m_from_m : -1,
+            /* coming from gap in target */
+            ix_last[i - 1] + t_from_ix[i],
+            /* coming from gap in query */
+            iy_last[i - 1] + t_from_iy[i],
+            /* start fresh */
+            t_open[i]);
+
+        // Set max now, position is recovered later (OPTIMIZATION)
+        row_max = MAX(row_max, m_cur[i] + t_close[i]);
+
+        /**
+         * Iy: target nt against a gap
+         */
+        iy_cur[i] = MAX(
+            // pair at previous row, now bulge
+            m_last[i] + t_iy_from_m[i],
+            // already bulging, add one more
+            iy_last[i] + iy_ext);
+    }
+    return row_max;
+}
+
+__attribute__((target_clones("avx2", "default"))) static void
 RIs_linSpace(const unsigned char* query_sequence,  /* query sequence - numeric representation */
              const unsigned char* target_sequence, /* target sequence */
              std::uint32_t m,                      /* query seq length */
@@ -52,10 +101,20 @@ RIs_linSpace(const unsigned char* query_sequence,  /* query sequence - numeric r
 
     /* matrices for alignment scores ending in different states */
     // Since we only need 2 rows we can optimize the memory layout.
-    MallocRAII<int> dp_rows(6 * (m + 1));
-    int* const M[2] = {dp_rows.get() + 0 * (m + 1), dp_rows.get() + 1 * (m + 1)};
-    int* const Ix[2] = {dp_rows.get() + 2 * (m + 1), dp_rows.get() + 3 * (m + 1)};
-    int* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
+    const std::uint32_t row_stride = (m + 8) / 8 * 8;
+    MallocRAII<int> dp_rows;
+    {
+        void* raw = nullptr;
+        if (posix_memalign(&raw, 32, (6 * row_stride + 8) * sizeof(int)) != 0) {
+            raw = nullptr;
+        }
+        dp_rows.reset(static_cast<int*>(raw));
+    }
+    /* Shifted by 2 so element 2 of every row, where the sweep starts, is 32-byte aligned. */
+    int* const dp_base = dp_rows.get() + 6;
+    int* const M[2] = {dp_base + 0 * row_stride, dp_base + 1 * row_stride};
+    int* const Ix[2] = {dp_base + 2 * row_stride, dp_base + 3 * row_stride};
+    int* const Iy[2] = {dp_base + 4 * row_stride, dp_base + 5 * row_stride};
 
 
     const QueryProfile profile(query_sequence, m, dsm);
@@ -143,17 +202,17 @@ RIs_linSpace(const unsigned char* query_sequence,  /* query sequence - numeric r
 
         /* DSM caching optimization */
         const auto context = QueryProfile::context(target_prev, target_current);
-        const RowTerms* T = profile.row(context);
+        const QueryProfile::RowLanes T = profile.lanes(context);
         const int* const ix_from_m = profile.ix_from_m(context);
         const auto iy_ext = profile.iy_extend(context);
         /* DSM caching optimization */
 
 
         /* Column 1 is the query's first nt, nothing can precede it */
-        M[currentRow][1] = MAX(0, T[1].m_open);
+        M[currentRow][1] = MAX(0, T.m_open[1]);
 
         // Track only the best value, the position is recovered later (OPTIMIZATION)
-        auto row_max = M[currentRow][1] + T[1].close;
+        auto row_max = M[currentRow][1] + T.close[1];
 
         // Ix bulges a query nt, impossible in 1st nucleotide
         Ix[currentRow][1] = NEGINF;
@@ -162,7 +221,7 @@ RIs_linSpace(const unsigned char* query_sequence,  /* query sequence - numeric r
         // Only M can win row max, so we don't take this as a candidate
         Iy[currentRow][1] = MAX(
             // We are now opening the bulge
-            M[lastRow][1] + T[1].iy_from_m,
+            M[lastRow][1] + T.iy_from_m[1],
             // We are extending a bulge
             Iy[lastRow][1] + iy_ext);
 
@@ -170,29 +229,9 @@ RIs_linSpace(const unsigned char* query_sequence,  /* query sequence - numeric r
 
 
 
-        for (auto i = 2u; i <= m; i++) {
-            M[currentRow][i] = max4(
-                /* coming from a match */
-                M[lastRow][i - 1] != 0 ? M[lastRow][i - 1] + T[i].m_from_m : -1,
-                /* coming from gap in target */
-                Ix[lastRow][i - 1] + T[i].m_from_ix,
-                /* coming from gap in query */
-                Iy[lastRow][i - 1] + T[i].m_from_iy,
-                /* start fresh */
-                T[i].m_open);
-
-            // Set max now, position is recovered later (OPTIMIZATION)
-            row_max = MAX(row_max, M[currentRow][i] + T[i].close);
-
-            /**
-             * Iy: target nt against a gap
-             */
-            Iy[currentRow][i] = MAX(
-                // pair at previous row, now bulge
-                M[lastRow][i] + T[i].iy_from_m,
-                // already bulging, add one more
-                Iy[lastRow][i] + iy_ext);
-        }
+        row_max = RIs_sweep_M_Iy(m, M[currentRow], Iy[currentRow], M[lastRow], Ix[lastRow],
+                                 Iy[lastRow], T.m_from_m, T.m_from_ix, T.m_from_iy, T.m_open,
+                                 T.close, T.iy_from_m, iy_ext, row_max);
 
         // Split the loop for performance.
         for (auto i = 2u; i <= m; ++i) {
@@ -210,7 +249,7 @@ RIs_linSpace(const unsigned char* query_sequence,  /* query sequence - numeric r
         auto row_pos = 1u;
         if (row_max > threshold || row_max > running_max.score) {
             for (auto i = 1u; i <= m; ++i) {
-                if (M[currentRow][i] + T[i].close == row_max) {
+                if (M[currentRow][i] + T.close[i] == row_max) {
                     row_pos = i;
                     break;
                 }

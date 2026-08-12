@@ -58,23 +58,25 @@ static RunningMax transpose_best_cell(const unsigned char* target_seq, int m, in
                                       const QueryProfile& profile, int q_offset, const int* best,
                                       const RunningVectorMax& first_row)
 {
-    RunningVectorMax column{};
-    column.set(best[1], 1);
+    RunningVectorMax inverted_best{};
+    inverted_best.set(best[1], 1);
     for (auto i = 2; i <= m; i++) {
-        column.set_if_better(best[i], i);
+        inverted_best.set_if_better(best[i], i);
     }
 
     /* Target position 1 came first, so it keeps ties. */
     RunningMax running_max{first_row.score, first_row.pos_i, 1};
-    if (!running_max.test(column.score)) {
+
+    // if inverted_best.score not better, return the running max of the first row
+    if (!running_max.test(inverted_best.score)) {
         return running_max;
     }
 
-    const auto qp = q_offset + column.pos_i;
+    const auto qp = q_offset + inverted_best.pos_i;
     for (auto j = 2; j <= n; j++) {
         const auto ctx = QueryProfile::context(target_seq[j - 2], target_seq[j - 1]);
-        if (M[j][column.pos_i] + profile.row(ctx).close[qp] == column.score) {
-            running_max.set(column.score, column.pos_i, j);
+        if (M[j][inverted_best.pos_i] + profile.row(ctx).close[qp] == inverted_best.score) {
+            running_max.set(inverted_best.score, inverted_best.pos_i, j);
             break;
         }
     }

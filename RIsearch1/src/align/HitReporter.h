@@ -2,11 +2,16 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+
+#include <fmt/compile.h>
+#include <fmt/format.h>
 
 #include "InteractionAlignment.h"
 #include "cli.h"
 #include "energy.hpp"
 #include "math/Matrix.h"
+#include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"
 #include "optimization/QueryProfile.h"
 #include "traceback.h"
@@ -33,8 +38,12 @@ public:
           m_reference(reference_from_matrix(config.mat_name)),
           m_M(config.tblen + 1, config.tblen + 1), m_Ix(config.tblen + 1, config.tblen + 1),
           m_Iy(config.tblen + 1, config.tblen + 1), m_qseq(config.tblen), m_tseq(config.tblen),
-          m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen))
+          m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen)),
+          /* Seven decimal fields, the energy and the separators, plus the two
+             names: everything in a line whose length is known up front. */
+          m_line_fixed(128 + std::strlen(qname) + std::strlen(tname))
     {
+        m_line.reserve(m_line_fixed);
     }
 
     /* pos_i, pos_j: the DP cell the hit ends at. score: what the sweep recorded
@@ -84,6 +93,25 @@ private:
         return w;
     }
 
+    /* Formats one line into the reporter's buffer and writes it.
+     *
+     * A run prints one of these per hit and there can be hundreds of thousands
+     * of them, so the format strings are compile-time and the buffer is sized
+     * once rather than per line. `extra` is the length of any variable-length
+     * field in the line -- the interaction string -- since the two names are the
+     * only other unbounded part and they are known when the reporter is built.
+     *
+     * The line is written as it is finished, so anything else that prints stays
+     * in order with it.
+     */
+    template<typename Format, typename... Args>
+    void write_line(std::size_t extra, const Format& format, const Args&... args)
+    {
+        m_line.reserve(m_line_fixed + extra);
+        char* const end = fmt::format_to(m_line.data(), format, args...);
+        std::fwrite(m_line.data(), 1, static_cast<std::size_t>(end - m_line.data()), stdout);
+    }
+
     void print(const Window& w, int pos_j, int score, double energy, bool is_suboptimal)
     {
         const auto qb = w.qbeg + m_hit.qbeg - 1;
@@ -98,15 +126,17 @@ private:
                (tend, tbeg) plus the interaction string. Preserved so that
                extracting this function cannot move any output. */
             if (is_suboptimal) {
-                printf("%d\t%d\t%d\t%d\t%.2f\t%s\n", qb, qe, te, tb, energy, m_hit.ali_ia.get());
+                const char* const ia = m_hit.ali_ia.get();
+                write_line(std::strlen(ia),
+                           FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\t{}\n"), qb, qe, te, tb, energy, ia);
             } else {
-                printf("%d\t%d\t%d\t%d\t%.2f\n", qb, qe, tb, te, energy);
+                write_line(0, FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\n"), qb, qe, tb, te, energy);
             }
             break;
 
         case 2:
-            printf("%s\t%d\t%d\t%s\t%d\t%d\t%d\t%.2f\n", m_qname, qb, qe, m_tname, tb, te, score,
-                   energy);
+            write_line(0, FMT_COMPILE("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2f}\n"), m_qname, qb, qe,
+                       m_tname, tb, te, score, energy);
             break;
 
         case 3:
@@ -141,6 +171,9 @@ private:
     /* Best M + close per query column; transpose_best_cell reads it. */
     MallocRAII<int> m_best;
     IA m_hit;
+
+    std::size_t m_line_fixed;
+    ByteBuffer m_line;
 
     int m_hitcount = 0;
 };

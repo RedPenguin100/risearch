@@ -33,40 +33,17 @@
 #define RISEARCH1_HAS_AVX2 0
 #endif
 
-/* Everything the scoring loop reads or writes. The query length is the
-   profile's, so it is not repeated here. */
-struct ScoreTargetArgs {
-    const unsigned char* target_sequence;
-    const QueryProfile* profile;
-    int* const* M;
-    int* const* Ix;
-    int* const* Iy;
-    int* hs; /* best score ending at row j, at [j - 1]     */
-    int* hp; /* the query position it ended at, at [j - 1]  */
-    int n;   /* target length */
-    int threshold;
-};
 
 /* Inlined into the caller on purpose: there the rows and the profile's tables
    are visibly separate allocations, and out of line the compiler has to assume a
    store through one could land in the other and re-load everything per row. */
 __attribute__((always_inline)) static inline void
-score_target_scalar(const ScoreTargetArgs& a, RunningMax& running_max)
+score_target_scalar(const unsigned char* target_sequence, const QueryProfile& profile,
+                    int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
+                    int threshold, RunningMax& running_max)
 {
-    const auto m = a.profile->m();
-    const auto n = a.n;
-    const auto threshold = a.threshold;
-    const unsigned char* const target_sequence = a.target_sequence;
-    const QueryProfile& profile = *a.profile;
-    int* const hs = a.hs;
-    int* const hp = a.hp;
+    const auto m = profile.m();
 
-    /* Copied out of the argument struct: the loop stores through int* into rows
-       the compiler cannot prove are separate from the profile's tables, so
-       anything left behind a pointer is re-loaded on every row. */
-    int* const M[2] = {a.M[0], a.M[1]};
-    int* const Ix[2] = {a.Ix[0], a.Ix[1]};
-    int* const Iy[2] = {a.Iy[0], a.Iy[1]};
 
     for (auto j = 2u; j <= n; j++) {
         /* Begin init of i=1 case */
@@ -307,26 +284,21 @@ ix_scan_block8(int* ix_out, const int* scan_terms, const int* prefix_terms, __m2
  * depend on the previous row alone, so the next block has nothing to wait for
  * and fills the latency of the scan below it.
  */
-__attribute__((target("avx2"))) static void score_target_avx2(const ScoreTargetArgs& a,
-                                                              RunningMax& running_max)
+__attribute__((target("avx2"))) static void score_target_avx2(const unsigned char* target_sequence, const QueryProfile& profile,
+                    int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
+                    int threshold, RunningMax& running_max)
 {
-    const auto m = a.profile->m();
-    const auto n = a.n;
-    const auto threshold = a.threshold;
-    const unsigned char* const target_sequence = a.target_sequence;
-    const QueryProfile& profile = *a.profile;
-    int* const hs = a.hs;
-    int* const hp = a.hp;
+    const auto m = profile.m();
 
     /* Row j is written to row j % 2, so the first row here, j = 2, writes row 0;
        swapping the two pointers at the end of each step is the same thing and
        keeps the row addresses in registers. */
-    int* m_cur = a.M[0];
-    int* m_last = a.M[1];
-    int* ix_cur = a.Ix[0];
-    int* ix_last = a.Ix[1];
-    int* iy_cur = a.Iy[0];
-    int* iy_last = a.Iy[1];
+    int* m_cur = M[0];
+    int* m_last = M[1];
+    int* ix_cur = Ix[0];
+    int* ix_last = Ix[1];
+    int* iy_cur = Iy[0];
+    int* iy_last = Iy[1];
 
     for (auto j = 2u; j <= n; j++) {
         const auto target_current = target_sequence[n - j];
@@ -436,13 +408,17 @@ static bool score_target_is_vectorized(std::uint32_t m)
 /* The entry point the alignment calls. Inlined for the same reason
    score_target_scalar is. */
 __attribute__((always_inline)) static inline void
-score_target(const ScoreTargetArgs& a, RunningMax& running_max)
+score_target(const unsigned char* target_sequence, const QueryProfile& profile,
+                    int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
+                    int threshold, RunningMax& running_max)
 {
 #if RISEARCH1_HAS_AVX2
-    if (score_target_is_vectorized(a.profile->m())) {
-        score_target_avx2(a, running_max);
+    if (score_target_is_vectorized(profile.m())) {
+        score_target_avx2(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
+                          running_max);
         return;
     }
 #endif
-    score_target_scalar(a, running_max);
+    score_target_scalar(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
+                        running_max);
 }

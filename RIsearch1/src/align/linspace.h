@@ -118,9 +118,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     hp[0] = running_row_max.pos_i;
 
 
-    const ScoreTargetArgs scoring{target_sequence, &profile, M,  Ix,       Iy,
-                                 hs,              hp,       n,  threshold};
-    score_target(scoring, running_max);
+    score_target(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
 
 
     HitReporter reporter(query_sequence, target_sequence, n, dsm, profile, config, qname, tname);

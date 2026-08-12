@@ -48,6 +48,9 @@ public:
         /* No target dependence: a query bulge over a gap on both sides. */
         for (auto i = 2u; i <= m; i++) {
             m_ix_extend[i] = dsm[query_sequence[i - 2]][query_sequence[i - 1]][GAP][GAP];
+            if (m_ix_extend[i] > 0) {
+                m_gaps_never_pay = false;
+            }
         }
 
         /* Ix[i] = max(M[i-1] + ix_from_m[i], Ix[i-1] + ix_extend[i]) is a running
@@ -70,6 +73,9 @@ public:
 
                 /* No query dependence: a target bulge over a gap. */
                 m_iy_extend[ctx] = dsm[GAP][GAP][t_prev][t_cur];
+                if (m_iy_extend[ctx] > 0) {
+                    m_gaps_never_pay = false;
+                }
 
                 for (auto i = 1u; i <= m; i++) {
                     const auto q_cur = query_sequence[i - 1];
@@ -87,9 +93,23 @@ public:
                     m_ix_from_m[off + i] = dsm[q_prev][q_cur][t_cur][GAP];
                     m_ix_from_m_scan[off + i] =
                         m_ix_from_m[off + i] - m_ix_prefix[i];
+
+                    /* Opening either bulge, at any column of any context. */
+                    if (m_ix_from_m[off + i] > 0 || m_iy_from_m[off + i] > 0) {
+                        m_gaps_never_pay = false;
+                    }
                 }
             }
         }
+    }
+
+    /* True when no term that opens or extends a bulge is positive, so a bulge
+       can never raise a score. A kernel that takes a max with 0 at the end of Ix
+       or Iy may then drop the tests for a predecessor of exactly 0: the -1 such a
+       test yields and the bulge it avoids are both <= 0, and neither can win. */
+    bool gaps_never_pay() const
+    {
+        return m_gaps_never_pay;
     }
 
     static unsigned context(unsigned t_prev, unsigned t_cur)
@@ -134,4 +154,5 @@ private:
     MallocRAII<int> m_ix_from_m_scan;
     MallocRAII<int> m_ix_prefix;
     int m_iy_extend[kContexts]{};
+    bool m_gaps_never_pay = true;
 };

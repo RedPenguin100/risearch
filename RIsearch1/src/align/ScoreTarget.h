@@ -149,9 +149,20 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i vadd(__m256
     return _mm256_add_epi32(a, b);
 }
 
+__attribute__((target("avx2"), always_inline)) static inline __m256i vsub(__m256i a, __m256i b)
+{
+    return _mm256_sub_epi32(a, b);
+}
+
 __attribute__((target("avx2"), always_inline)) static inline __m256i vmax(__m256i a, __m256i b)
 {
     return _mm256_max_epi32(a, b);
+}
+
+__attribute__((target("avx2"), always_inline)) static inline __m256i vmax3(__m256i a, __m256i b,
+                                                                           __m256i c)
+{
+    return vmax(vmax(a, b), c);
 }
 
 __attribute__((target("avx2"), always_inline)) static inline __m256i vmax4(__m256i a, __m256i b,

@@ -8,7 +8,7 @@
 #include "memory/ByteBuffer.hpp"
 #include "nucleotide.h" /* GAP, NEGINF */
 #include "operations.h"
-#include "ScoreTarget.h"
+#include "avx2/primitives.h"
 #include "optimization/QueryProfile.h"
 #include "string_util.h"
 
@@ -367,7 +367,7 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
 static bool ris_fill_is_vectorized(int m, const QueryProfile& profile)
 {
 #if RISEARCH1_HAS_AVX2
-    return m >= 9 && !profile.has_positive_gap() && SCORE_TARGET_CPU_HAS_AVX2;
+    return m >= 9 && !profile.has_positive_gap() && CPU_HAS_AVX2;
 #else
     (void)m;
     (void)profile;

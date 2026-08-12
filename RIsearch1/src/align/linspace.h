@@ -44,7 +44,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     int* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
 
 
-    const QueryProfile profile(query_sequence, m, dsm);
+    const QueryProfile profile(query_sequence, m, dsm, has_positive_gap(dsm));
 
     M[0][0] = Ix[0][0] = Iy[0][0] = 0;
 

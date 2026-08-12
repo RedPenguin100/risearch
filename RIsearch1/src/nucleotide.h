@@ -62,6 +62,31 @@ static char index2nt(unsigned char ix)
 }
 
 
+/* The code seq2ix gives one input character, for the characters that have one.
+   Anything else -- a gap, a nonstandard code, a character that is not sequence
+   at all -- is left to the switch, which is the only place that reports. */
+static constexpr unsigned char kSeqCodeOther = 255;
+
+struct SeqCodeTable {
+    unsigned char code[256];
+
+    constexpr SeqCodeTable() : code()
+    {
+        for (auto& c : code) {
+            c = kSeqCodeOther;
+        }
+        code[static_cast<unsigned char>('A')] = code[static_cast<unsigned char>('a')] = 0;
+        code[static_cast<unsigned char>('C')] = code[static_cast<unsigned char>('c')] = 1;
+        code[static_cast<unsigned char>('G')] = code[static_cast<unsigned char>('g')] = 2;
+        code[static_cast<unsigned char>('T')] = code[static_cast<unsigned char>('t')] = 3;
+        code[static_cast<unsigned char>('U')] = code[static_cast<unsigned char>('u')] = 3;
+        code[static_cast<unsigned char>('N')] = code[static_cast<unsigned char>('n')] = 4;
+    }
+};
+
+static constexpr SeqCodeTable kSeqCodes{};
+
+
 /* Encodes a sequence into matrix indices, dropping gap characters. The buffer
  * ends up exactly as long as the encoding, so there is no gap count to hand back
  * and no length for the caller to correct. False means the sequence held a
@@ -71,31 +96,19 @@ static bool seq2ix(std::uint32_t len, const char* seq, ByteBuffer& retIx, const 
                    const char* type)
 {
     retIx.clear();
+    /* Gaps are dropped and nothing expands, so len is the most this can produce
+       and no character has to check for room. */
+    retIx.reserve(len);
 
     for (auto i = 0u; i < len; i++) {
+
+        // kSeqCodes.code[..] is a faster way to access nucleotides than a switch
+        const auto code = kSeqCodes.code[static_cast<unsigned char>(seq[i])];
+        if (code != kSeqCodeOther) {
+            retIx.push_back(static_cast<char>(code));
+            continue;
+        }
         switch (seq[i]) {
-        case 'A':
-        case 'a':
-            retIx.push_back(0);
-            break;
-        case 'C':
-        case 'c':
-            retIx.push_back(1);
-            break;
-        case 'G':
-        case 'g':
-            retIx.push_back(2);
-            break;
-        case 'T':
-        case 't':
-        case 'U':
-        case 'u':
-            retIx.push_back(3);
-            break;
-        case 'N':
-        case 'n':
-            retIx.push_back(4);
-            break;
         case '-':
         case '.': /*discard gaps from input*/
             break;

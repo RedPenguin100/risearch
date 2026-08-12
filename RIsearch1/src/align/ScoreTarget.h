@@ -138,6 +138,39 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile& pr
 
 #if RISEARCH1_HAS_AVX2
 
+/* One value in all eight lanes. */
+__attribute__((target("avx2"), always_inline)) static inline __m256i all_lanes(int v)
+{
+    return _mm256_set1_epi32(v);
+}
+
+/* The scalar operations of the recurrence, eight lanes at a time. vmax4 mirrors
+   max4, and add_unless_zero is the `x != 0 ? x + term : -1` test -- no lane can
+   branch, so both arms are computed and one is selected per lane. */
+__attribute__((target("avx2"), always_inline)) static inline __m256i vadd(__m256i a, __m256i b)
+{
+    return _mm256_add_epi32(a, b);
+}
+
+__attribute__((target("avx2"), always_inline)) static inline __m256i vmax(__m256i a, __m256i b)
+{
+    return _mm256_max_epi32(a, b);
+}
+
+__attribute__((target("avx2"), always_inline)) static inline __m256i vmax4(__m256i a, __m256i b,
+                                                                          __m256i c, __m256i d)
+{
+    return vmax(vmax(a, b), vmax(c, d));
+}
+
+__attribute__((target("avx2"), always_inline)) static inline __m256i
+add_unless_zero(__m256i base, __m256i term, int fallback)
+{
+    return _mm256_blendv_epi8(vadd(base, term), all_lanes(fallback),
+                              _mm256_cmpeq_epi32(base, _mm256_setzero_si256()));
+}
+
+
 /* Eight ints of a row or of a term run. */
 __attribute__((target("avx2"), always_inline)) static inline __m256i vec_load(const int* p)
 {
@@ -169,17 +202,14 @@ __attribute__((target("avx2"), always_inline)) static inline int vec_hmax(__m256
    wins. */
 __attribute__((target("avx2"), always_inline)) static inline __m256i vec_prefix_max(__m256i v)
 {
-    const __m256i none = _mm256_set1_epi32(INT_MIN);
+    const __m256i none = all_lanes(INT_MIN);
     const __m256i down1 = _mm256_setr_epi32(0, 0, 1, 2, 3, 4, 5, 6);
     const __m256i down2 = _mm256_setr_epi32(0, 0, 0, 1, 2, 3, 4, 5);
     const __m256i down4 = _mm256_setr_epi32(0, 0, 0, 0, 0, 1, 2, 3);
 
-    v = _mm256_max_epi32(v,
-                         _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
-    v = _mm256_max_epi32(v,
-                         _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
-    return _mm256_max_epi32(v,
-                            _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
+    v = vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
+    v = vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
+    return vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
 }
 
 /* M and Iy for the eight columns starting at i, and their contribution to the
@@ -192,32 +222,28 @@ m_iy_block8(unsigned i, const QueryProfile::RowView& T, int* m_cur, int* iy_cur,
        position back and one query position back. Adjacent because the columns
        are adjacent; the diagonal is only the -1. */
     const __m256i m_diag = vec_load(m_last + i - 1);
-    const __m256i m_new = _mm256_max_epi32(
-        _mm256_max_epi32(
-            /* coming from a match, and its M[lastRow][i-1] != 0 test: no lane
-               can branch, so both arms are computed and cmpeq plus blendv
-               select between them per lane. */
-            _mm256_blendv_epi8(_mm256_add_epi32(m_diag, vec_load(T.m_from_m + i)),
-                               _mm256_set1_epi32(-1),
-                               _mm256_cmpeq_epi32(m_diag, _mm256_setzero_si256())),
-            /* coming from gap in target */
-            _mm256_add_epi32(vec_load(ix_last + i - 1), vec_load(T.m_from_ix + i))),
-        _mm256_max_epi32(
-            /* coming from gap in query */
-            _mm256_add_epi32(vec_load(iy_last + i - 1), vec_load(T.m_from_iy + i)),
-            /* start fresh */
-            vec_load(T.m_open + i)));
+
+    const __m256i m_new = vmax4(
+        /* coming from a match */
+        add_unless_zero(m_diag, vec_load(T.m_from_m + i), -1),
+        /* coming from gap in target */
+        vadd(vec_load(ix_last + i - 1), vec_load(T.m_from_ix + i)),
+        /* coming from gap in query */
+        vadd(vec_load(iy_last + i - 1), vec_load(T.m_from_iy + i)),
+        /* start fresh */
+        vec_load(T.m_open + i));
     vec_store(m_cur + i, m_new);
 
-    *v_row_max = _mm256_max_epi32(*v_row_max, _mm256_add_epi32(m_new, vec_load(T.close + i)));
+    *v_row_max = vmax(*v_row_max, vadd(m_new, vec_load(T.close + i)));
 
-    /* Iy's predecessors are vertical: previous row, same column, so no -1 on
-       the address. That offset is the whole difference. */
-    vec_store(iy_cur + i, _mm256_max_epi32(
+    /* Iy's predecessors are vertical: previous row, same column, so no -1 on the
+       address. That offset is the whole difference. */
+    vec_store(iy_cur + i, vmax(
                               /* pair at previous row, now bulge */
-                              _mm256_add_epi32(vec_load(m_last + i), vec_load(T.iy_from_m + i)),
+                              vadd(vec_load(m_last + i), vec_load(T.iy_from_m + i)),
                               /* already bulging, add one more */
-                              _mm256_add_epi32(vec_load(iy_last + i), v_iy_ext)));
+                              vadd(vec_load(iy_last + i), v_iy_ext)));
+
     return m_new;
 }
 
@@ -243,12 +269,12 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i
 ix_scan_block8(int* ix_out, const int* scan_terms, const int* prefix_terms, __m256i m_left,
                __m256i carry)
 {
-    const __m256i candidates = _mm256_add_epi32(m_left, vec_load(scan_terms));
-    const __m256i best = _mm256_max_epi32(vec_prefix_max(candidates), carry);
+    const __m256i candidates = vadd(m_left, vec_load(scan_terms));
+    const __m256i best = vmax(vec_prefix_max(candidates), carry);
     /* Adding ix_prefix back turns the carried quantity into the real Ix, which
        is what the next row and the traceback read. */
-    vec_store(ix_out, _mm256_add_epi32(best, vec_load(prefix_terms)));
-    return _mm256_permutevar8x32_epi32(best, _mm256_set1_epi32(7));
+    vec_store(ix_out, vadd(best, vec_load(prefix_terms)));
+    return _mm256_permutevar8x32_epi32(best, all_lanes(7));
 }
 
 /* The same recurrence, eight query positions at a time. Differences from the
@@ -279,14 +305,11 @@ ix_scan_block8(int* ix_out, const int* scan_terms, const int* prefix_terms, __m2
  * blocks wide. At m >= 80 a row is ten blocks and there is enough independent
  * work to cover the load anyway, and the shift that replaces it costs about as
  * much as it saves.
- *
- * Each block is also issued one step ahead of the scan that reads it: M and Iy
- * depend on the previous row alone, so the next block has nothing to wait for
- * and fills the latency of the scan below it.
  */
-__attribute__((target("avx2"))) static void score_target_avx2(const unsigned char* target_sequence, const QueryProfile& profile,
-                    int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
-                    int threshold, RunningMax& running_max)
+__attribute__((target("avx2"))) static void
+score_target_avx2(const unsigned char* target_sequence, const QueryProfile& profile,
+                  int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
+                  int threshold, RunningMax& running_max)
 {
     const auto m = profile.m();
 
@@ -314,45 +337,37 @@ __attribute__((target("avx2"))) static void score_target_avx2(const unsigned cha
         ix_cur[1] = NEGINF;
         iy_cur[1] = MAX(m_last[1] + T.iy_from_m[1], iy_last[1] + iy_ext);
 
-        const __m256i v_iy_ext = _mm256_set1_epi32(iy_ext);
-        __m256i v_row_max = _mm256_set1_epi32(row_max);
+        const __m256i v_iy_ext = all_lanes(iy_ext);
+        __m256i v_row_max = all_lanes(row_max);
 
-        /* The block whose M the scan is about to read, the block before it --
-           lane 7 of which is M at the column just left of the scan -- and the
-           carry the scan enters with, which is what Ix[1] holds so that the
-           first block sees exactly what the serial recurrence would have
-           carried into it. */
-        __m256i m_left = _mm256_set1_epi32(m_cur[1]);
-        __m256i v_carry = _mm256_set1_epi32(NEGINF);
-        __m256i m_block =
-            m_iy_block8(2, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext, &v_row_max);
+        /* M at the column just left of the scan's first block, and the carry it
+           enters with -- what Ix[1] holds, so the first block sees exactly what
+           the serial recurrence would have carried into it. */
+        __m256i m_left = all_lanes(m_cur[1]);
+        __m256i v_carry = all_lanes(NEGINF);
 
         auto start = 2u;
-        for (; start + 15 <= m; start += 8) {
-            /* One block ahead of the scan below it. */
-            const __m256i m_next = m_iy_block8(start + 8, T, m_cur, iy_cur, m_last, ix_last,
-                                               iy_last, v_iy_ext, &v_row_max);
+        for (; start + 7 <= m; start += 8) {
+            const __m256i m_block =
+                m_iy_block8(start, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext,
+                            &v_row_max);
             v_carry = ix_scan_block8(ix_cur + start, T.ix_from_m_scan + start,
                                      T.ix_prefix + start, shifted_left_one(m_left, m_block),
                                      v_carry);
             m_left = m_block;
-            m_block = m_next;
         }
-        /* Fewer than eight columns can be left over at the end, and their M and
-           Iy come from one more block backed up to end at m. Its Ix cannot come
-           with them: the block covers columns the scan has already folded into
-           its carry, and a running max cannot revisit those. That also leaves it
-           independent of the scan, so it is issued first, like the blocks in the
-           loop. */
-        if (start + 8 <= m) {
+
+        /* Fewer than eight columns can be left over. Their M and Iy come from one
+           more block backed up to end at m; its Ix cannot, because the block covers
+           columns the scan has already folded into its carry and a running max
+           cannot revisit those. */
+        if (start <= m) {
             m_iy_block8(m - 7, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext, &v_row_max);
         }
-        v_carry = ix_scan_block8(ix_cur + start, T.ix_from_m_scan + start, T.ix_prefix + start,
-                                 shifted_left_one(m_left, m_block), v_carry);
         row_max = vec_hmax(v_row_max);
 
         /* The tail, in the original form -- at most seven columns. */
-        auto i = start + 8;
+        auto i = start;
         for (; i <= m; ++i) {
             ix_cur[i] = MAX(m_cur[i - 1] + T.ix_from_m[i], ix_cur[i - 1] + T.ix_extend[i]);
         }

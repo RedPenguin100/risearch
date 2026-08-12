@@ -77,6 +77,24 @@ function(risearch1_optimise target)
     endif()
 endfunction()
 
+# --- fmt, which formats the hit lines ---------------------------------------
+# Fetched at a pinned tag rather than taken from wherever the machine happens to
+# have one. A build environment on the PATH ahead of the system -- conda is the
+# common one -- can offer an fmt built against a different runtime, and mixing it
+# with this build's LTO fails at link time. Packagers who want to link the fmt
+# they ship can turn the option on.
+option(RISEARCH_USE_SYSTEM_FMT "Link the installed fmt instead of fetching one" OFF)
+if(RISEARCH_USE_SYSTEM_FMT)
+    find_package(fmt 9 REQUIRED)
+else()
+    include(FetchContent)
+    FetchContent_Declare(fmt
+        GIT_REPOSITORY https://github.com/fmtlib/fmt.git
+        GIT_TAG 11.0.2
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(fmt)
+endif()
+
 # setup.py copies bin/RIsearch into the wheel, so both binaries land where the
 # Makefile used to put them rather than in the build tree.
 set(RISEARCH1_BIN ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -86,6 +104,7 @@ add_executable(RIsearch ${RISEARCH1_SOURCES})
 target_include_directories(RIsearch PRIVATE ${RISEARCH1_INCLUDES})
 target_compile_definitions(RIsearch PRIVATE ${RISEARCH1_DEFINES})
 target_compile_options(RIsearch PRIVATE ${RISEARCH1_WARNINGS})
+target_link_libraries(RIsearch PRIVATE fmt::fmt-header-only)
 risearch1_optimise(RIsearch)
 set_target_properties(RIsearch PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${RISEARCH1_BIN})
 
@@ -94,6 +113,7 @@ add_executable(RIsearch_dbg ${RISEARCH1_SOURCES})
 target_include_directories(RIsearch_dbg PRIVATE ${RISEARCH1_INCLUDES})
 target_compile_definitions(RIsearch_dbg PRIVATE ${RISEARCH1_DEFINES} DEBUG VERBOSE=2)
 target_compile_options(RIsearch_dbg PRIVATE ${RISEARCH1_WARNINGS} -g -O0)
+target_link_libraries(RIsearch_dbg PRIVATE fmt::fmt-header-only)
 set_target_properties(RIsearch_dbg PROPERTIES
     OUTPUT_NAME RIsearch.dbg
     RUNTIME_OUTPUT_DIRECTORY ${RISEARCH1_BIN})
@@ -109,7 +129,7 @@ target_compile_definitions(risearch1_core
 target_compile_options(risearch1_core PRIVATE ${RISEARCH1_WARNINGS})
 # The benchmarks time this library, so it is built like the shipped binary.
 risearch1_optimise(risearch1_core)
-target_link_libraries(risearch1_core PUBLIC m)
+target_link_libraries(risearch1_core PUBLIC m fmt::fmt-header-only)
 
 if(RISEARCH_BUILD_TESTS)
     add_subdirectory(tests)

@@ -15,11 +15,14 @@ jobs:
       - uses: actions/checkout@v4
 
       # googletest is fetched by FetchContent; cache it so PRs don't re-clone it.
+      # The sub-build under _deps records the checkout's absolute path, so the
+      # key carries the repository: renaming it moves the checkout and anything
+      # cached under the old name would point somewhere that no longer exists.
       - name: Cache googletest
         uses: actions/cache@v4
         with:
           path: RIsearch1/build/_deps
-          key: gtest-v1.15.2-${{ runner.os }}
+          key: gtest-v1.15.2-${{ runner.os }}-${{ github.repository }}
 
       - name: Configure
         run: cmake -S RIsearch1 -B RIsearch1/build -DCMAKE_BUILD_TYPE=Release

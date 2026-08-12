@@ -5,6 +5,8 @@
 // ReSharper disable once CppUnusedIncludeDirective
 #include <cstdlib>
 
+#include "nucleotide.h" /* GAP */
+
 
 extern const short dsm_t99[6][6][6][6];
 extern const short dsm_t04[6][6][6][6];
@@ -72,4 +74,26 @@ static void getMat(const char* matname, short* dsm, short extension_penalty, int
         }
     }
 
+}
+
+
+/* Whether any entry that opens or extends a bulge is positive, which means the
+   alignment is paid to open bulges. A property of the matrix and of the
+   extension penalty applied to it, not of any query. */
+static bool has_positive_gap(const short dsm[6][6][6][6])
+{
+    for (auto q_prev = 0u; q_prev < DSM_SIDE; q_prev++) {
+        for (auto q_cur = 0u; q_cur < DSM_SIDE; q_cur++) {
+            for (auto t_prev = 0u; t_prev < DSM_SIDE; t_prev++) {
+                for (auto t_cur = 0u; t_cur < DSM_SIDE; t_cur++) {
+                    /* Opening either bulge, and extending either. */
+                    if (dsm[q_prev][q_cur][t_cur][GAP] > 0 || dsm[q_prev][GAP][t_prev][t_cur] > 0 ||
+                        dsm[q_prev][q_cur][GAP][GAP] > 0 || dsm[GAP][GAP][t_prev][t_cur] > 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
 }

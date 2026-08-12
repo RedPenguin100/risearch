@@ -38,19 +38,18 @@ public:
         int iy_extend;        /* dsm[GAP][GAP][t_prev][t_cur]      -- one value per row    */
     };
 
-    QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6])
+    QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6],
+                 bool has_positive_gap)
         : m_stride(m + 1), m_m_from_m(kContexts * (m + 1)), m_m_from_ix(kContexts * (m + 1)),
           m_m_from_iy(kContexts * (m + 1)), m_m_open(kContexts * (m + 1)),
           m_close(kContexts * (m + 1)), m_iy_from_m(kContexts * (m + 1)),
           m_ix_from_m(kContexts * (m + 1)), m_ix_extend(m + 1),
-          m_ix_from_m_scan(kContexts * (m + 1)), m_ix_prefix(m + 1)
+          m_ix_from_m_scan(kContexts * (m + 1)), m_ix_prefix(m + 1),
+          m_has_positive_gap(has_positive_gap)
     {
         /* No target dependence: a query bulge over a gap on both sides. */
         for (auto i = 2u; i <= m; i++) {
             m_ix_extend[i] = dsm[query_sequence[i - 2]][query_sequence[i - 1]][GAP][GAP];
-            if (m_ix_extend[i] > 0) {
-                m_gaps_never_pay = false;
-            }
         }
 
         /* Ix[i] = max(M[i-1] + ix_from_m[i], Ix[i-1] + ix_extend[i]) is a running
@@ -73,9 +72,6 @@ public:
 
                 /* No query dependence: a target bulge over a gap. */
                 m_iy_extend[ctx] = dsm[GAP][GAP][t_prev][t_cur];
-                if (m_iy_extend[ctx] > 0) {
-                    m_gaps_never_pay = false;
-                }
 
                 for (auto i = 1u; i <= m; i++) {
                     const auto q_cur = query_sequence[i - 1];
@@ -93,23 +89,15 @@ public:
                     m_ix_from_m[off + i] = dsm[q_prev][q_cur][t_cur][GAP];
                     m_ix_from_m_scan[off + i] =
                         m_ix_from_m[off + i] - m_ix_prefix[i];
-
-                    /* Opening either bulge, at any column of any context. */
-                    if (m_ix_from_m[off + i] > 0 || m_iy_from_m[off + i] > 0) {
-                        m_gaps_never_pay = false;
-                    }
                 }
             }
         }
     }
 
-    /* True when no term that opens or extends a bulge is positive, so a bulge
-       can never raise a score. A kernel that takes a max with 0 at the end of Ix
-       or Iy may then drop the tests for a predecessor of exactly 0: the -1 such a
-       test yields and the bulge it avoids are both <= 0, and neither can win. */
-    bool gaps_never_pay() const
+    /* What ::has_positive_gap said about the matrix this profile was built from. */
+    bool has_positive_gap() const
     {
-        return m_gaps_never_pay;
+        return m_has_positive_gap;
     }
 
     static unsigned context(unsigned t_prev, unsigned t_cur)
@@ -154,5 +142,5 @@ private:
     MallocRAII<int> m_ix_from_m_scan;
     MallocRAII<int> m_ix_prefix;
     int m_iy_extend[kContexts]{};
-    bool m_gaps_never_pay = true;
+    bool m_has_positive_gap;
 };

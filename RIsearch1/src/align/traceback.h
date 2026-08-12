@@ -209,7 +209,7 @@ static void ris_fill_scalar(const unsigned char* target_seq, int m, int n, int**
  *  - Ix and Iy drop their tests for a predecessor of exactly 0. Both end in a max
  *    with 0, so the -1 a failed test yields and the bulge it avoids are both <= 0
  *    and neither can win. That holds only while no bulge term is positive, which
- *    is what gaps_never_pay() checks and what the dispatch below requires. M
+ *    is what has_positive_gap() rules out and what the dispatch below requires. M
  *    keeps its tests: its fourth candidate is an opening score rather than 0, so
  *    -1 can still win there.
  *
@@ -367,7 +367,7 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
 static bool ris_fill_is_vectorized(int m, const QueryProfile& profile)
 {
 #if RISEARCH1_HAS_AVX2
-    return m >= 9 && profile.gaps_never_pay() && SCORE_TARGET_CPU_HAS_AVX2;
+    return m >= 9 && !profile.has_positive_gap() && SCORE_TARGET_CPU_HAS_AVX2;
 #else
     (void)m;
     (void)profile;

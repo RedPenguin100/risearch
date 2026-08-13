@@ -106,7 +106,7 @@ public:
         return t_prev * DSM_SIDE + t_cur;
     }
 
-    std::uint32_t m() const
+    std::uint32_t query_length() const
     {
         return m_stride - 1;
     }

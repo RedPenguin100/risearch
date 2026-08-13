@@ -34,7 +34,7 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile& pr
                     int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
                     int threshold, RunningMax& running_max)
 {
-    const auto m = profile.m();
+    const auto m = profile.query_length();
 
 
     for (auto j = 2u; j <= n; j++) {
@@ -220,7 +220,7 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
                   int* const* Ix, int* const* Iy, int* hs, int* hp, int n, int threshold,
                   RunningMax& running_max)
 {
-    const auto m = profile.m();
+    const auto m = profile.query_length();
 
     /* Row j is written to row j % 2, so the first row here, j = 2, writes row 0;
        swapping the two pointers at the end of each step is the same thing and
@@ -320,7 +320,7 @@ score_target(const unsigned char* target_sequence, const QueryProfile& profile, 
 {
 #if RISEARCH1_HAS_AVX2
     // No upside from using AVX2 for small target sizes
-    if (profile.m() <= 8) {
+    if (profile.query_length() <= 8) {
         score_target_scalar(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
         return;
     }

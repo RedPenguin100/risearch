@@ -44,65 +44,63 @@ static const bool CPU_HAS_AVX2 = [] {
 #if RISEARCH1_HAS_AVX2
 
 /* One value in all eight lanes. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i all_lanes(int v)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_int_to_avx2(int v)
 {
     return _mm256_set1_epi32(v);
+}
+
+/* Eight ints of a row or of a term run. */
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_vec_load(const int* p)
+{
+    return _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
+}
+
+__attribute__((target("avx2"), always_inline)) static inline void v_vec_store(int* p, __m256i v)
+{
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v);
 }
 
 /* The scalar operations of the recurrence, eight lanes at a time. vmax4 mirrors
    max4, and add_unless_zero_or_neg1 is the `x != 0 ? x + term : -1` test -- no
    lane can branch, so both arms are computed and one is selected per lane. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i vadd(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_add(__m256i a, __m256i b)
 {
     return _mm256_add_epi32(a, b);
 }
 
-__attribute__((target("avx2"), always_inline)) static inline __m256i vsub(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_sub(__m256i a, __m256i b)
 {
     return _mm256_sub_epi32(a, b);
 }
 
-__attribute__((target("avx2"), always_inline)) static inline __m256i vmax(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_max(__m256i a, __m256i b)
 {
     return _mm256_max_epi32(a, b);
 }
 
-__attribute__((target("avx2"), always_inline)) static inline __m256i vmax3(__m256i a, __m256i b,
-                                                                           __m256i c)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_max3(__m256i a, __m256i b,
+                                                                            __m256i c)
 {
-    return vmax(vmax(a, b), c);
+    return v_max(v_max(a, b), c);
 }
 
-__attribute__((target("avx2"), always_inline)) static inline __m256i vmax4(__m256i a, __m256i b,
-                                                                           __m256i c, __m256i d)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_max4(__m256i a, __m256i b,
+                                                                            __m256i c, __m256i d)
 {
-    return vmax(vmax(a, b), vmax(c, d));
+    return v_max(v_max(a, b), v_max(c, d));
 }
 
 
 __attribute__((target("avx2"), always_inline)) static inline __m256i
-add_unless_zero_or_neg1(__m256i base, __m256i term)
+v_add_unless_zero_or_neg1(__m256i base, __m256i term)
 {
     // base != 0 ? base + term : -1; (per lane)
-    return _mm256_or_si256(vadd(base, term),
-                           _mm256_cmpeq_epi32(base, _mm256_setzero_si256()));
-}
-
-
-/* Eight ints of a row or of a term run. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i vec_load(const int* p)
-{
-    return _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
-}
-
-__attribute__((target("avx2"), always_inline)) static inline void vec_store(int* p, __m256i v)
-{
-    _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v);
+    return _mm256_or_si256(v_add(base, term), _mm256_cmpeq_epi32(base, _mm256_setzero_si256()));
 }
 
 /* Largest of the eight lanes, by folding in half three times: eight values cost
    three maxes rather than seven. Lane 0 ends up holding the answer. */
-__attribute__((target("avx2"), always_inline)) static inline int vec_hmax(__m256i v)
+__attribute__((target("avx2"), always_inline)) static inline int v_hmax(__m256i v)
 {
     __m128i best = _mm_max_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
     best = _mm_max_epi32(best, _mm_shuffle_epi32(best, _MM_SHUFFLE(1, 0, 3, 2)));
@@ -118,16 +116,16 @@ __attribute__((target("avx2"), always_inline)) static inline int vec_hmax(__m256
    halves, which a byte shift cannot; index 0 is filler for the low lanes with no
    source, and the blend overwrites exactly those with INT_MIN so filler never
    wins. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i vec_prefix_max(__m256i v)
+__attribute__((target("avx2"), always_inline)) static inline __m256i v_prefix_max(__m256i v)
 {
-    const __m256i none = all_lanes(INT_MIN);
+    const __m256i none = v_int_to_avx2(INT_MIN);
     const __m256i down1 = _mm256_setr_epi32(0, 0, 1, 2, 3, 4, 5, 6);
     const __m256i down2 = _mm256_setr_epi32(0, 0, 0, 1, 2, 3, 4, 5);
     const __m256i down4 = _mm256_setr_epi32(0, 0, 0, 0, 0, 1, 2, 3);
 
-    v = vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
-    v = vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
-    return vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
+    v = v_max(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
+    v = v_max(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
+    return v_max(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
 }
 
 /* The block's eight columns of M moved one column to the right, so that lane k
@@ -135,8 +133,8 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i vec_prefix_
    value that moves in. A four-byte shift of a whole register has to cross its
    two 128-bit halves, which alignr does not do on its own, so the permute puts
    the two halves alignr needs side by side first. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i shifted_left_one(__m256i prev,
-                                                                                      __m256i cur)
+__attribute__((target("avx2"), always_inline)) static inline __m256i
+v_shifted_left_one(__m256i prev, __m256i cur)
 {
     return _mm256_alignr_epi8(cur, _mm256_permute2x128_si256(prev, cur, 0x21), 12);
 }

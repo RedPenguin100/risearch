@@ -288,7 +288,7 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
         const int* const ix_scan = t.ix_from_m_scan + q_offset;
         const int* const ix_pref = t.ix_prefix + q_offset;
 
-        const __m256i v_iy_ext = all_lanes(iy_ext);
+        const __m256i v_iy_ext = v_int_to_avx2(iy_ext);
 
         for (auto start = 2; start <= m; start += 8) {
             /* The clamp is what makes the last block end exactly at m. */
@@ -296,51 +296,51 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
 
             /* For each column the block writes, its diagonal predecessor: one
                target position back and one query position back. */
-            const __m256i m_diag = vec_load(m_prev + i - 1);
-            const __m256i ix_diag = vec_load(ix_prev + i - 1);
-            const __m256i iy_diag = vec_load(iy_prev + i - 1);
+            const __m256i m_diag = v_vec_load(m_prev + i - 1);
+            const __m256i ix_diag = v_vec_load(ix_prev + i - 1);
+            const __m256i iy_diag = v_vec_load(iy_prev + i - 1);
 
-            const __m256i m_new = vmax4(
+            const __m256i m_new = v_max4(
                 // continue from a pair
-                add_unless_zero_or_neg1(m_diag, vec_load(from_m + i)),
+                v_add_unless_zero_or_neg1(m_diag, v_vec_load(from_m + i)),
                 // close a bulge in query
-                add_unless_zero_or_neg1(ix_diag, vec_load(from_ix + i)),
+                v_add_unless_zero_or_neg1(ix_diag, v_vec_load(from_ix + i)),
                 // close a bulge in target
-                add_unless_zero_or_neg1(iy_diag, vec_load(from_iy + i)),
+                v_add_unless_zero_or_neg1(iy_diag, v_vec_load(from_iy + i)),
                 // start fresh
-                vec_load(open + i));
-            vec_store(m_cur + i, m_new);
+                v_vec_load(open + i));
+            v_vec_store(m_cur + i, m_new);
 
-            vec_store(best + i, vmax(vec_load(best + i), vadd(m_new, vec_load(close + i))));
+            v_vec_store(best + i, v_max(v_vec_load(best + i), v_add(m_new, v_vec_load(close + i))));
 
             /* Iy's predecessors are vertical: previous target position, same
                column, so no -1 on the address. */
-            vec_store(iy_cur + i,
-                      vmax3(
+            v_vec_store(iy_cur + i,
+                      v_max3(
                           // Open a bulge in target
-                          vadd(vec_load(m_prev + i), vec_load(iy_from_m + i)),
+                          v_add(v_vec_load(m_prev + i), v_vec_load(iy_from_m + i)),
                           // Continue a bulge in target
-                          vadd(vec_load(iy_prev + i), v_iy_ext),
+                          v_add(v_vec_load(iy_prev + i), v_iy_ext),
                           zero));
         }
 
         /* Ix, as a running max over the same candidates with ix_prefix taken
            out. The 0 arm becomes -ix_prefix in that space; the carry starts
            below every candidate, and Ix[j][1] is unreachable so it cannot win. */
-        __m256i carry = all_lanes(NEGINF);
+        __m256i carry = v_int_to_avx2(NEGINF);
         auto i = 2;
         for (; i + 8 <= m + 1; i += 8) {
-            const __m256i prefix = vec_load(ix_pref + i);
+            const __m256i prefix = v_vec_load(ix_pref + i);
             const __m256i candidates =
-                vmax(// Open a bulge in query
-                     vadd(vec_load(m_cur + i - 1), vec_load(ix_scan + i)),
+                v_max(// Open a bulge in query
+                     v_add(v_vec_load(m_cur + i - 1), v_vec_load(ix_scan + i)),
                      // or hold nothing yet, which is this column's 0
-                     vsub(zero, prefix));
-            const __m256i winner = vmax(vec_prefix_max(candidates), carry);
+                     v_sub(zero, prefix));
+            const __m256i winner = v_max(v_prefix_max(candidates), carry);
             /* Putting ix_prefix back turns the carried quantity into the real Ix,
                which is what the next column and the backtrack read. */
-            vec_store(ix_cur + i, vadd(winner, prefix));
-            carry = _mm256_permutevar8x32_epi32(winner, all_lanes(7));
+            v_vec_store(ix_cur + i, v_add(winner, prefix));
+            carry = _mm256_permutevar8x32_epi32(winner, v_int_to_avx2(7));
         }
         /* The columns left over go through one more block, backed up to end at m.
            A running max cannot revisit a column already folded into its carry, so
@@ -349,13 +349,13 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
            been carrying. */
         if (i <= m) {
             const auto back = m - 7;
-            const __m256i prefix = vec_load(ix_pref + back);
+            const __m256i prefix = v_vec_load(ix_pref + back);
             const __m256i candidates =
-                vmax(vadd(vec_load(m_cur + back - 1), vec_load(ix_scan + back)),
-                     vsub(zero, prefix));
-            const __m256i winner = vmax(vec_prefix_max(candidates),
-                                        all_lanes(ix_cur[back - 1] - ix_pref[back - 1]));
-            vec_store(ix_cur + back, vadd(winner, prefix));
+                v_max(v_add(v_vec_load(m_cur + back - 1), v_vec_load(ix_scan + back)),
+                     v_sub(zero, prefix));
+            const __m256i winner = v_max(v_prefix_max(candidates),
+                                        v_int_to_avx2(ix_cur[back - 1] - ix_pref[back - 1]));
+            v_vec_store(ix_cur + back, v_add(winner, prefix));
         }
     }
 }

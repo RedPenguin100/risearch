@@ -137,31 +137,31 @@ main_dp_loop_avx2(unsigned i, const QueryProfile::RowView& T, int* m_cur, int* i
     /* For each column this block writes, its diagonal predecessor: one target
        position back and one query position back. Adjacent because the columns
        are adjacent; the diagonal is only the -1. */
-    const __m256i m_diag = vec_load(m_last + i - 1);
+    const __m256i m_diag = v_vec_load(m_last + i - 1);
 
 
     // Assign M with a 4-way max
-    const __m256i m_new = vmax4(
+    const __m256i m_new = v_max4(
         /* coming from a match */
-        add_unless_zero_or_neg1(m_diag, vec_load(T.m_from_m + i)),
+        v_add_unless_zero_or_neg1(m_diag, v_vec_load(T.m_from_m + i)),
         /* coming from gap in target */
-        vadd(vec_load(ix_last + i - 1), vec_load(T.m_from_ix + i)),
+        v_add(v_vec_load(ix_last + i - 1), v_vec_load(T.m_from_ix + i)),
         /* coming from gap in query */
-        vadd(vec_load(iy_last + i - 1), vec_load(T.m_from_iy + i)),
+        v_add(v_vec_load(iy_last + i - 1), v_vec_load(T.m_from_iy + i)),
         /* start fresh */
-        vec_load(T.m_open + i));
-    vec_store(m_cur + i, m_new);
+        v_vec_load(T.m_open + i));
+    v_vec_store(m_cur + i, m_new);
 
     // Set max now, position is recovered later
-    *v_row_max = vmax(*v_row_max, vadd(m_new, vec_load(T.close + i)));
+    *v_row_max = v_max(*v_row_max, v_add(m_new, v_vec_load(T.close + i)));
 
     // Iy: target nt against a gap. Predecessors are vertical -- previous row,
     // same column -- so no -1 on the address, unlike M's diagonal above.
-    vec_store(iy_cur + i, vmax(
+    v_vec_store(iy_cur + i, v_max(
                               /* pair at previous row, now bulge */
-                              vadd(vec_load(m_last + i), vec_load(T.iy_from_m + i)),
+                              v_add(v_vec_load(m_last + i), v_vec_load(T.iy_from_m + i)),
                               /* already bulging, add one more */
-                              vadd(vec_load(iy_last + i), v_iy_ext)));
+                              v_add(v_vec_load(iy_last + i), v_iy_ext)));
 
     return m_new;
 }
@@ -178,12 +178,12 @@ ix_dp_loop_avx2(int* ix_out, const int* ix_from_m_scan, const int* ix_prefix, __
                 __m256i ix_carry)
 {
     // Ix: query nt against a gap
-    const __m256i candidates = vadd(m_left, vec_load(ix_from_m_scan));
-    const __m256i best = vmax(vec_prefix_max(candidates), ix_carry);
+    const __m256i candidates = v_add(m_left, v_vec_load(ix_from_m_scan));
+    const __m256i best = v_max(v_prefix_max(candidates), ix_carry);
     /* Adding ix_prefix back turns the carried quantity into the real Ix, which
        is what the next row and the traceback read. */
-    vec_store(ix_out, vadd(best, vec_load(ix_prefix)));
-    return _mm256_permutevar8x32_epi32(best, all_lanes(7));
+    v_vec_store(ix_out, v_add(best, v_vec_load(ix_prefix)));
+    return _mm256_permutevar8x32_epi32(best, v_int_to_avx2(7));
 }
 
 /* The same recurrence, eight query positions at a time. Differences from the
@@ -247,14 +247,14 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
         iy_cur[1] = MAX(m_last[1] + T.iy_from_m[1], iy_last[1] + iy_ext);
         /* finished init of i=1 col */
 
-        const __m256i v_iy_ext = all_lanes(iy_ext);
-        __m256i v_row_max = all_lanes(row_max);
+        const __m256i v_iy_ext = v_int_to_avx2(iy_ext);
+        __m256i v_row_max = v_int_to_avx2(row_max);
 
         /* M at the column just left of the scan's first block, and the carry it
            enters with -- what Ix[1] holds, so the first block sees exactly what
            the serial recurrence would have carried into it. */
-        __m256i m_left = all_lanes(m_cur[1]);
-        __m256i v_ix_carry = all_lanes(NEGINF);
+        __m256i m_left = v_int_to_avx2(m_cur[1]);
+        __m256i v_ix_carry = v_int_to_avx2(NEGINF);
 
         /* Begin main DP */
         auto start = 2u;
@@ -264,7 +264,7 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
             // The separate ix loop in a separate function
             v_ix_carry =
                 ix_dp_loop_avx2(ix_cur + start, T.ix_from_m_scan + start, T.ix_prefix + start,
-                                shifted_left_one(m_left, m_block), v_ix_carry);
+                                v_shifted_left_one(m_left, m_block), v_ix_carry);
             m_left = m_block;
         }
 
@@ -273,7 +273,7 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
             main_dp_loop_avx2(m - 7, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext,
                               &v_row_max);
         }
-        row_max = vec_hmax(v_row_max);
+        row_max = v_hmax(v_row_max);
 
         // Fewer than 8 columns need special case for main IX DP
         // Ix can't re-use the function like main_dp because an overlap behaves differently.

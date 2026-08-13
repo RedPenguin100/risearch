@@ -79,6 +79,12 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i vmax4(__m25
     return vmax(vmax(a, b), vmax(c, d));
 }
 
+/* base != 0 ? base + term : fallback, per lane.
+ *
+ * With the fallback the callers pass -- -1, every bit set -- and a mask that is
+ * all ones or all zeros in a lane, this blend is the same thing as an or, and
+ * the compiler emits it as one. Passing any other fallback gives that up and
+ * costs a real blend. */
 __attribute__((target("avx2"), always_inline)) static inline __m256i
 add_unless_zero(__m256i base, __m256i term, int fallback)
 {

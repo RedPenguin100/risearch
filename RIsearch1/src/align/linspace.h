@@ -14,7 +14,14 @@
 #include "nucleotide.h"
 #include "operations.h"
 
-static void
+/* Compiled once for AVX2 and once for the baseline, with the CPU checked at load
+   time. The sweep and the window fill this calls carry target("avx2"), and gcc
+   will not inline a function that has the attribute into a caller that does not,
+   so without the clone both stay out-of-line calls and nothing around them is
+   optimised across the boundary. Giving them a caller that already has AVX2 is
+   what lets them inline, and the baseline clone keeps the binary running where
+   AVX2 is missing. */
+__attribute__((target_clones("avx2", "default"))) static void
 RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical representation
              const ByteBuffer& target_sequence_ix, // target sequence numerical representation
              short dsm[6][6][6][6],                /* scoring matrix -- TODO variable length!? */

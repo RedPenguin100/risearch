@@ -50,8 +50,8 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i all_lanes(i
 }
 
 /* The scalar operations of the recurrence, eight lanes at a time. vmax4 mirrors
-   max4, and add_unless_zero is the `x != 0 ? x + term : -1` test -- no lane can
-   branch, so both arms are computed and one is selected per lane. */
+   max4, and add_unless_zero_or_neg1 is the `x != 0 ? x + term : -1` test -- no
+   lane can branch, so both arms are computed and one is selected per lane. */
 __attribute__((target("avx2"), always_inline)) static inline __m256i vadd(__m256i a, __m256i b)
 {
     return _mm256_add_epi32(a, b);
@@ -79,17 +79,13 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i vmax4(__m25
     return vmax(vmax(a, b), vmax(c, d));
 }
 
-/* base != 0 ? base + term : fallback, per lane.
- *
- * With the fallback the callers pass -- -1, every bit set -- and a mask that is
- * all ones or all zeros in a lane, this blend is the same thing as an or, and
- * the compiler emits it as one. Passing any other fallback gives that up and
- * costs a real blend. */
+
 __attribute__((target("avx2"), always_inline)) static inline __m256i
-add_unless_zero(__m256i base, __m256i term, int fallback)
+add_unless_zero_or_neg1(__m256i base, __m256i term)
 {
-    return _mm256_blendv_epi8(vadd(base, term), all_lanes(fallback),
-                              _mm256_cmpeq_epi32(base, _mm256_setzero_si256()));
+    // base != 0 ? base + term : -1; (per lane)
+    return _mm256_or_si256(vadd(base, term),
+                           _mm256_cmpeq_epi32(base, _mm256_setzero_si256()));
 }
 
 

@@ -143,7 +143,7 @@ main_dp_loop_avx2(unsigned i, const QueryProfile::RowView& T, int* m_cur, int* i
     // Assign M with a 4-way max
     const __m256i m_new = vmax4(
         /* coming from a match */
-        add_unless_zero(m_diag, vec_load(T.m_from_m + i), -1),
+        add_unless_zero_or_neg1(m_diag, vec_load(T.m_from_m + i)),
         /* coming from gap in target */
         vadd(vec_load(ix_last + i - 1), vec_load(T.m_from_ix + i)),
         /* coming from gap in query */

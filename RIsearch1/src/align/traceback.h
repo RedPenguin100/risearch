@@ -302,11 +302,11 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
 
             const __m256i m_new = vmax4(
                 // continue from a pair
-                add_unless_zero(m_diag, vec_load(from_m + i), -1),
+                add_unless_zero_or_neg1(m_diag, vec_load(from_m + i)),
                 // close a bulge in query
-                add_unless_zero(ix_diag, vec_load(from_ix + i), -1),
+                add_unless_zero_or_neg1(ix_diag, vec_load(from_ix + i)),
                 // close a bulge in target
-                add_unless_zero(iy_diag, vec_load(from_iy + i), -1),
+                add_unless_zero_or_neg1(iy_diag, vec_load(from_iy + i)),
                 // start fresh
                 vec_load(open + i));
             vec_store(m_cur + i, m_new);

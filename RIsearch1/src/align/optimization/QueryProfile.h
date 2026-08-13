@@ -69,6 +69,7 @@ public:
             for (auto t_cur = 0u; t_cur < DSM_SIDE; t_cur++) {
                 const auto ctx = context(t_prev, t_cur);
                 const auto off = ctx * m_stride;
+                m_offsets[ctx] = off;
 
                 /* No query dependence: a target bulge over a gap. */
                 m_iy_extend[ctx] = dsm[GAP][GAP][t_prev][t_cur];
@@ -105,7 +106,7 @@ public:
         return t_prev * DSM_SIDE + t_cur;
     }
 
-    std::uint32_t m() const
+    std::uint32_t query_length() const
     {
         return m_stride - 1;
     }
@@ -119,7 +120,7 @@ public:
 
     RowView row(unsigned ctx) const
     {
-        const auto off = ctx * m_stride;
+        const auto off = m_offsets[ctx];
         return {m_m_from_m.get() + off,  m_m_from_ix.get() + off, m_m_from_iy.get() + off,
                 m_m_open.get() + off,    m_close.get() + off,     m_iy_from_m.get() + off,
                 m_ix_from_m.get() + off, m_ix_extend.get(),
@@ -131,6 +132,10 @@ private:
     static constexpr unsigned kContexts = DSM_SIDE * DSM_SIDE;
 
     std::uint32_t m_stride;
+    /* Where each context's run starts. A row lookup runs once per target
+       position, so the stride multiply it replaces is on the sweep's hot path. */
+    std::uint32_t m_offsets[kContexts];
+
     MallocRAII<int> m_m_from_m;
     MallocRAII<int> m_m_from_ix;
     MallocRAII<int> m_m_from_iy;

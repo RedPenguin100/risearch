@@ -23,15 +23,7 @@
  * read side by side.
  */
 
-/* The vector kernel is compiled in only where the compiler understands both the
-   x86 intrinsics and the target attribute that keeps them out of the rest of the
-   program. Everywhere else the scalar version is the whole implementation. */
-#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-#define RISEARCH1_HAS_AVX2 1
-#include <immintrin.h>
-#else
-#define RISEARCH1_HAS_AVX2 0
-#endif
+#include "avx2/primitives.h"
 
 
 /* Inlined into the caller on purpose: there the rows and the profile's tables
@@ -135,91 +127,6 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile& pr
 
 #if RISEARCH1_HAS_AVX2
 
-/* One value in all eight lanes. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i all_lanes(int v)
-{
-    return _mm256_set1_epi32(v);
-}
-
-/* The scalar operations of the recurrence, eight lanes at a time. vmax4 mirrors
-   max4, and add_unless_zero is the `x != 0 ? x + term : -1` test -- no lane can
-   branch, so both arms are computed and one is selected per lane. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i vadd(__m256i a, __m256i b)
-{
-    return _mm256_add_epi32(a, b);
-}
-
-__attribute__((target("avx2"), always_inline)) static inline __m256i vsub(__m256i a, __m256i b)
-{
-    return _mm256_sub_epi32(a, b);
-}
-
-__attribute__((target("avx2"), always_inline)) static inline __m256i vmax(__m256i a, __m256i b)
-{
-    return _mm256_max_epi32(a, b);
-}
-
-__attribute__((target("avx2"), always_inline)) static inline __m256i vmax3(__m256i a, __m256i b,
-                                                                           __m256i c)
-{
-    return vmax(vmax(a, b), c);
-}
-
-__attribute__((target("avx2"), always_inline)) static inline __m256i vmax4(__m256i a, __m256i b,
-                                                                           __m256i c, __m256i d)
-{
-    return vmax(vmax(a, b), vmax(c, d));
-}
-
-__attribute__((target("avx2"), always_inline)) static inline __m256i
-add_unless_zero(__m256i base, __m256i term, int fallback)
-{
-    return _mm256_blendv_epi8(vadd(base, term), all_lanes(fallback),
-                              _mm256_cmpeq_epi32(base, _mm256_setzero_si256()));
-}
-
-
-/* Eight ints of a row or of a term run. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i vec_load(const int* p)
-{
-    return _mm256_loadu_si256(reinterpret_cast<const __m256i*>(p));
-}
-
-__attribute__((target("avx2"), always_inline)) static inline void vec_store(int* p, __m256i v)
-{
-    _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v);
-}
-
-/* Largest of the eight lanes, by folding in half three times: eight values cost
-   three maxes rather than seven. Lane 0 ends up holding the answer. */
-__attribute__((target("avx2"), always_inline)) static inline int vec_hmax(__m256i v)
-{
-    __m128i best = _mm_max_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
-    best = _mm_max_epi32(best, _mm_shuffle_epi32(best, _MM_SHUFFLE(1, 0, 3, 2)));
-    best = _mm_max_epi32(best, _mm_shuffle_epi32(best, _MM_SHUFFLE(2, 3, 0, 1)));
-    return _mm_cvtsi128_si32(best);
-}
-
-/* Lane k becomes the largest of lanes 0..k, in three doubling steps: each takes
-   the value 1, then 2, then 4 lanes below and maxes it in. Three suffice for
-   eight lanes because 1 + 2 + 4 = 7 is the furthest any lane must see, and the
-   regrouping is legal only because max is associative -- which is what the
-   ix_prefix rewrite bought. permutevar crosses the register's two 128-bit
-   halves, which a byte shift cannot; index 0 is filler for the low lanes with no
-   source, and the blend overwrites exactly those with INT_MIN so filler never
-   wins. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i vec_prefix_max(__m256i v)
-{
-    const __m256i none = all_lanes(INT_MIN);
-    const __m256i down1 = _mm256_setr_epi32(0, 0, 1, 2, 3, 4, 5, 6);
-    const __m256i down2 = _mm256_setr_epi32(0, 0, 0, 1, 2, 3, 4, 5);
-    const __m256i down4 = _mm256_setr_epi32(0, 0, 0, 0, 0, 1, 2, 3);
-
-    v = vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
-    v = vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
-    return vmax(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
-}
-
 /* M and Iy for the eight columns starting at i, and their contribution to the
    row max. Returns M, which the Ix scan reads. */
 __attribute__((target("avx2"), always_inline)) static inline __m256i
@@ -230,44 +137,33 @@ main_dp_loop_avx2(unsigned i, const QueryProfile::RowView& T, int* m_cur, int* i
     /* For each column this block writes, its diagonal predecessor: one target
        position back and one query position back. Adjacent because the columns
        are adjacent; the diagonal is only the -1. */
-    const __m256i m_diag = vec_load(m_last + i - 1);
+    const __m256i m_diag = v_vec_load(m_last + i - 1);
 
 
     // Assign M with a 4-way max
-    const __m256i m_new = vmax4(
+    const __m256i m_new = v_max4(
         /* coming from a match */
-        add_unless_zero(m_diag, vec_load(T.m_from_m + i), -1),
+        v_add_unless_zero_or_neg1(m_diag, v_vec_load(T.m_from_m + i)),
         /* coming from gap in target */
-        vadd(vec_load(ix_last + i - 1), vec_load(T.m_from_ix + i)),
+        v_add(v_vec_load(ix_last + i - 1), v_vec_load(T.m_from_ix + i)),
         /* coming from gap in query */
-        vadd(vec_load(iy_last + i - 1), vec_load(T.m_from_iy + i)),
+        v_add(v_vec_load(iy_last + i - 1), v_vec_load(T.m_from_iy + i)),
         /* start fresh */
-        vec_load(T.m_open + i));
-    vec_store(m_cur + i, m_new);
+        v_vec_load(T.m_open + i));
+    v_vec_store(m_cur + i, m_new);
 
     // Set max now, position is recovered later
-    *v_row_max = vmax(*v_row_max, vadd(m_new, vec_load(T.close + i)));
+    *v_row_max = v_max(*v_row_max, v_add(m_new, v_vec_load(T.close + i)));
 
     // Iy: target nt against a gap. Predecessors are vertical -- previous row,
     // same column -- so no -1 on the address, unlike M's diagonal above.
-    vec_store(iy_cur + i, vmax(
+    v_vec_store(iy_cur + i, v_max(
                               /* pair at previous row, now bulge */
-                              vadd(vec_load(m_last + i), vec_load(T.iy_from_m + i)),
+                              v_add(v_vec_load(m_last + i), v_vec_load(T.iy_from_m + i)),
                               /* already bulging, add one more */
-                              vadd(vec_load(iy_last + i), v_iy_ext)));
+                              v_add(v_vec_load(iy_last + i), v_iy_ext)));
 
     return m_new;
-}
-
-/* The block's eight columns of M moved one column to the right, so that lane k
-   holds M at the column just left of the block's lane k. Lane 7 of prev is the
-   value that moves in. A four-byte shift of a whole register has to cross its
-   two 128-bit halves, which alignr does not do on its own, so the permute puts
-   the two halves alignr needs side by side first. */
-__attribute__((target("avx2"), always_inline)) static inline __m256i shifted_left_one(__m256i prev,
-                                                                                      __m256i cur)
-{
-    return _mm256_alignr_epi8(cur, _mm256_permute2x128_si256(prev, cur, 0x21), 12);
 }
 
 /* The Ix scan for a block's eight columns, starting at column i.
@@ -282,12 +178,12 @@ ix_dp_loop_avx2(int* ix_out, const int* ix_from_m_scan, const int* ix_prefix, __
                 __m256i ix_carry)
 {
     // Ix: query nt against a gap
-    const __m256i candidates = vadd(m_left, vec_load(ix_from_m_scan));
-    const __m256i best = vmax(vec_prefix_max(candidates), ix_carry);
+    const __m256i candidates = v_add(m_left, v_vec_load(ix_from_m_scan));
+    const __m256i best = v_max(v_prefix_max(candidates), ix_carry);
     /* Adding ix_prefix back turns the carried quantity into the real Ix, which
        is what the next row and the traceback read. */
-    vec_store(ix_out, vadd(best, vec_load(ix_prefix)));
-    return _mm256_permutevar8x32_epi32(best, all_lanes(7));
+    v_vec_store(ix_out, v_add(best, v_vec_load(ix_prefix)));
+    return _mm256_permutevar8x32_epi32(best, v_int_to_avx2(7));
 }
 
 /* The same recurrence, eight query positions at a time. Differences from the
@@ -351,14 +247,14 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
         iy_cur[1] = MAX(m_last[1] + T.iy_from_m[1], iy_last[1] + iy_ext);
         /* finished init of i=1 col */
 
-        const __m256i v_iy_ext = all_lanes(iy_ext);
-        __m256i v_row_max = all_lanes(row_max);
+        const __m256i v_iy_ext = v_int_to_avx2(iy_ext);
+        __m256i v_row_max = v_int_to_avx2(row_max);
 
         /* M at the column just left of the scan's first block, and the carry it
            enters with -- what Ix[1] holds, so the first block sees exactly what
            the serial recurrence would have carried into it. */
-        __m256i m_left = all_lanes(m_cur[1]);
-        __m256i v_ix_carry = all_lanes(NEGINF);
+        __m256i m_left = v_int_to_avx2(m_cur[1]);
+        __m256i v_ix_carry = v_int_to_avx2(NEGINF);
 
         /* Begin main DP */
         auto start = 2u;
@@ -368,7 +264,7 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
             // The separate ix loop in a separate function
             v_ix_carry =
                 ix_dp_loop_avx2(ix_cur + start, T.ix_from_m_scan + start, T.ix_prefix + start,
-                                shifted_left_one(m_left, m_block), v_ix_carry);
+                                v_shifted_left_one(m_left, m_block), v_ix_carry);
             m_left = m_block;
         }
 
@@ -377,7 +273,7 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
             main_dp_loop_avx2(m - 7, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext,
                               &v_row_max);
         }
-        row_max = vec_hmax(v_row_max);
+        row_max = v_hmax(v_row_max);
 
         // Fewer than 8 columns need special case for main IX DP
         // Ix can't re-use the function like main_dp because an overlap behaves differently.
@@ -413,22 +309,6 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
 #endif /* RISEARCH1_HAS_AVX2 */
 
 
-/* AVX2 is picked at run time, so one binary still starts on a CPU without it and
-   the build needs no -march. RISEARCH_NO_AVX2 in the environment forces the
-   scalar version, which is how the two are compared from a single build.
-   Decided once at startup: a function-local static would put its thread-safe
-   initialisation guard inside the caller, which is the hot loop. */
-static const bool SCORE_TARGET_CPU_HAS_AVX2 = [] {
-#if RISEARCH1_HAS_AVX2
-    if (getenv("RISEARCH_NO_AVX2") != nullptr) {
-        return false;
-    }
-    __builtin_cpu_init();
-    return __builtin_cpu_supports("avx2") != 0;
-#else
-    return false;
-#endif
-}();
 
 
 /* The entry point the alignment calls. Inlined for the same reason
@@ -445,7 +325,7 @@ score_target(const unsigned char* target_sequence, const QueryProfile& profile, 
         return;
     }
     // Only use AVX2 if the CPU supports
-    if (SCORE_TARGET_CPU_HAS_AVX2) {
+    if (CPU_HAS_AVX2) {
         score_target_avx2(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
         return;
     }

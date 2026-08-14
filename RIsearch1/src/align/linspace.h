@@ -130,38 +130,5 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
 
     HitReporter reporter(query_sequence, target_sequence, n, dsm, profile, config, qname, tname);
 
-    if (!(config.doSubopt && (config.filter_e || config.printShort > 1))) {
-        reporter.report(running_max.pos_i, running_max.pos_j, running_max.score, false);
-    }
-    if (!config.doSubopt) {
-        if (config.printShort == 3) {
-            printf("%s\t%s\t%d\n", qname, tname, reporter.hitcount());
-        }
-        return;
-    }
-
-    auto j = n; /* hits_score is 0-based over rows 1..n, so index j-1 holds row j */
-    while (j--) {
-        if (hits_score[j] <= threshold) {
-            continue;
-        }
-        /* Look back up to `vicinity` rows and take the best of them. */
-        auto tmp = MIN(config.vicinity, j); /* how far back we may look   */
-        const auto resume_at = j - tmp++;   /* where the scan resumes     */
-        auto locMax = 0u;                   /* offset of the best so far  */
-        while (--tmp) {
-            if (hits_score[j - tmp] > hits_score[j - locMax]) {
-                locMax = tmp;
-            }
-        }
-        j -= locMax; /* move onto the window's best */
-
-        reporter.report(hits_pos[j], j + 1, hits_score[j], true);
-
-        /* Resume below the whole window, not just below the hit we reported. */
-        j = resume_at;
-    }
-    if (config.printShort == 3) {
-        printf("%s\t%s\t%d\n", qname, tname, reporter.hitcount());
-    }
+    reporter.report_sweep(hs, hp, threshold, running_max);
 }

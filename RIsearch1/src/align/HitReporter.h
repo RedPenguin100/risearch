@@ -8,7 +8,9 @@
 #include <fmt/format.h>
 
 #include "InteractionAlignment.h"
+#include "RunningMax.h"
 #include "cli.h"
+#include "operations.h"
 #include "energy.hpp"
 #include "math/Matrix.h"
 #include "memory/ByteBuffer.hpp"
@@ -64,6 +66,46 @@ public:
         }
     }
 
+    /* The runs the sweep leaves behind -- the best score ending at each target
+       position and the query position it ended at -- turned into reported hits.
+       Which of them get printed is an output mode question. */
+    void report_sweep(const int* hits_score, const int* hits_pos, int threshold,
+                      const RunningMax& running_max)
+    {
+        if (!(m_config.doSubopt && (m_config.filter_e || m_config.printShort > 1))) {
+            report(running_max.pos_i, running_max.pos_j, running_max.score, false);
+        }
+
+        if (m_config.doSubopt) {
+            auto j = static_cast<int>(m_n); /* the runs are 0-based over rows 1..n */
+            while (j--) {
+                if (hits_score[j] <= threshold) {
+                    continue;
+                }
+                /* Look back up to `vicinity` rows and take the best of them. */
+                auto tmp = MIN(m_config.vicinity, j); /* how far back we may look   */
+                const auto resume_at = j - tmp++;     /* where the scan resumes     */
+                auto locMax = 0u;                     /* offset of the best so far  */
+                while (--tmp) {
+                    if (hits_score[j - tmp] > hits_score[j - locMax]) {
+                        locMax = tmp;
+                    }
+                }
+                j -= locMax; /* move onto the window's best */
+
+                report(hits_pos[j], j + 1, hits_score[j], true);
+
+                /* Resume below the whole window, not just below the hit we reported. */
+                j = resume_at;
+            }
+        }
+
+        /* One line per query and target rather than per hit. */
+        if (m_config.printShort == 3) {
+            write_line(FMT_COMPILE("{}\t{}\t{}\n"), m_qname, m_tname, m_hitcount);
+        }
+    }
+
     int hitcount() const
     {
         return m_hitcount;
@@ -104,6 +146,15 @@ private:
      * The line is written as it is finished, so anything else that prints stays
      * in order with it.
      */
+    /* A line whose length the reserve made at construction already covers. */
+    template<typename Format, typename... Args>
+    void write_line(const Format& format, const Args&... args)
+    {
+        write_line(std::size_t{0}, format, args...);
+    }
+
+    /* extra is what the one unbounded field -- the interaction string -- adds
+       beyond that reserve. */
     template<typename Format, typename... Args>
     void write_line(std::size_t extra, const Format& format, const Args&... args)
     {
@@ -130,12 +181,12 @@ private:
                 write_line(std::strlen(ia),
                            FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\t{}\n"), qb, qe, te, tb, energy, ia);
             } else {
-                write_line(0, FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\n"), qb, qe, tb, te, energy);
+                write_line(FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\n"), qb, qe, tb, te, energy);
             }
             break;
 
         case 2:
-            write_line(0, FMT_COMPILE("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2f}\n"), m_qname, qb, qe,
+            write_line(FMT_COMPILE("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2f}\n"), m_qname, qb, qe,
                        m_tname, tb, te, score, energy);
             break;
 

@@ -35,6 +35,7 @@
 #include "FastaRAII.h"
 #include "FastaRecord.h"
 #include "align/dispatch.h"
+#include "align/optimization/QueryProfileCache.h"
 
 
 int main(int argc, char* argv[])
@@ -52,6 +53,10 @@ int main(int argc, char* argv[])
     getMat(config.mat_name, &dsm[0][0][0][0], config.extension_penalty,
            config.transpose_matrix_flag);
 
+    /* One per run: a profile depends on the query and the matrix, and the
+       matrix does not change. */
+    QueryProfileCache profile_cache;
+
     if (config.seq2_file_name) {
         /* target given as file - or STDIN */
         FastaRAII target_fasta(config.seq2_file_name);
@@ -66,7 +71,8 @@ int main(int argc, char* argv[])
         ByteBuffer target_seq_indices;
 
         int target_count = 0;
-        while (target_record.read(target_fasta.handle())) {
+
+    while (target_record.read(target_fasta.handle())) {
             target_count++;
             /*can be done already when reading in first place */
             if (!seq2ix(target_record.get_size(), target_record.get_sequence(), target_seq_indices,
@@ -102,7 +108,8 @@ int main(int argc, char* argv[])
                                target_record.get_name(), len_seq2);
 
                     run_alignment(query_seq_indices, target_seq_indices, dsm, query_record.get_name(),
-                                  target_record.get_name(), config);
+                                  target_record.get_name(), config, profile_cache,
+                                  static_cast<std::size_t>(query_count - 1));
                 }
             } else if (config.seq1_cli) {
                 /* query given as command line parameter */
@@ -117,7 +124,8 @@ int main(int argc, char* argv[])
                     printf("\n\nquery from_cli (%u nts) vs. target %s (%u nts)\n\n", len_seq1,
                            target_record.get_name(), len_seq2);
 
-                run_alignment(query_seq_indices, target_seq_indices, dsm, "from_cli", target_record.get_name(), config);
+                run_alignment(query_seq_indices, target_seq_indices, dsm, "from_cli", target_record.get_name(),
+                              config, profile_cache, 0);
 
             } else {
                 fprintf(stderr, "No query seq given!");
@@ -143,6 +151,7 @@ int main(int argc, char* argv[])
             }
             FastaRecord query_record;
             ByteBuffer qseqIx;
+            std::size_t query_index = 0;
             while (query_record.read(query_fasta.handle())) {
                 if (!seq2ix(query_record.get_size(), query_record.get_sequence(), qseqIx,
                             query_record.get_name(), "query")) {
@@ -155,7 +164,8 @@ int main(int argc, char* argv[])
                            query_record.get_name(), len_seq1, len_seq2);
                 }
 
-                run_alignment(qseqIx, target_seq_indices, dsm, query_record.get_name(), "from_cli", config);
+                run_alignment(qseqIx, target_seq_indices, dsm, query_record.get_name(), "from_cli",
+                              config, profile_cache, query_index++);
             }
         } else if (config.seq1_cli) {
             /* query given as command line parameter */
@@ -171,7 +181,8 @@ int main(int argc, char* argv[])
                 printf("\n\nquery from_cli (%u nts) vs. target from_cli (%u nts)\n\n", len_seq1,
                        len_seq2);
 
-            run_alignment(qseqIx, target_seq_indices, dsm, "from_cli", "from_cli", config);
+            run_alignment(qseqIx, target_seq_indices, dsm, "from_cli", "from_cli", config,
+                          profile_cache, 0);
         } else {
             fprintf(stderr, "No query seq given!");
             /* is caught in getArg already -- alternative run seq against itself!? */

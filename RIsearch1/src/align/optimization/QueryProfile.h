@@ -128,8 +128,9 @@ public:
                 m_ix_prefix.get(),       m_iy_extend[ctx]};
     }
 
-private:
     static constexpr unsigned kContexts = DSM_SIDE * DSM_SIDE;
+
+private:
 
     std::uint32_t m_stride;
     /* Where each context's run starts. A row lookup runs once per target

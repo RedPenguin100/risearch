@@ -6,6 +6,7 @@
 #include "HitReporter.h"
 #include "RunningMax.h"
 #include "align/optimization/QueryProfile.h"
+#include "align/optimization/QueryProfileCache.h"
 #include "align/ScoreTarget.h"
 #include "cli.h"
 #include "energy.hpp"
@@ -28,7 +29,9 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
              int threshold,                        /* give out hits higher than that */
              const char* qname,                    /* query name */
              const char* tname,                    /* target name */
-             const config_st& config)
+             const config_st& config,
+             QueryProfileCache& profile_cache,     /* profiles kept across target records */
+             std::size_t query_index)
 {
     const auto m = static_cast<short>(query_sequence_ix.size());
     const auto n = static_cast<int>(target_sequence_ix.size());
@@ -51,7 +54,15 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     int* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
 
 
-    const QueryProfile profile(query_sequence, m, dsm, has_positive_gap(dsm));
+    /* Held across target records where the cache has room; built here when not. */
+    const QueryProfile* cached =
+        profile_cache.get(query_index, query_sequence, m, dsm, has_positive_gap(dsm));
+    std::unique_ptr<QueryProfile> owned;
+    if (cached == nullptr) {
+        owned = std::make_unique<QueryProfile>(query_sequence, m, dsm, has_positive_gap(dsm));
+        cached = owned.get();
+    }
+    const QueryProfile& profile = *cached;
 
     M[0][0] = Ix[0][0] = Iy[0][0] = 0;
 

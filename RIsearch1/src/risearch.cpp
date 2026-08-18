@@ -25,6 +25,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
+#include <malloc.h>
 #include <unistd.h>
 
 
@@ -39,6 +40,20 @@
 
 int main(int argc, char* argv[])
 {
+    /* Set the minimum amount of memory that gets given back to the OS, so a run
+       page-faults less when it allocates and runs faster. This does not raise
+       memory usage to the set amount -- the process just does not drop back
+       below what it has already spiked to.
+
+       Both lines are needed: setting only the trim threshold freezes the size
+       above which an allocation is served by mmap instead of the heap, and the
+       buffers a pair reuses then come from fresh pages every time, which faults
+       more than leaving the allocator alone. */
+#if defined(__GLIBC__)
+    mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
+    mallopt(M_MMAP_THRESHOLD, 64 * 1024 * 1024);
+#endif
+
     /* values filled in by getArgs from the command line */
     static config_st config;
 

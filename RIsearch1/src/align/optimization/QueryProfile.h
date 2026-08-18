@@ -40,13 +40,27 @@ public:
 
     QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6],
                  bool has_positive_gap)
-        : m_stride(m + 1), m_m_from_m(kContexts * (m + 1)), m_m_from_ix(kContexts * (m + 1)),
-          m_m_from_iy(kContexts * (m + 1)), m_m_open(kContexts * (m + 1)),
-          m_close(kContexts * (m + 1)), m_iy_from_m(kContexts * (m + 1)),
-          m_ix_from_m(kContexts * (m + 1)), m_ix_extend(m + 1),
-          m_ix_from_m_scan(kContexts * (m + 1)), m_ix_prefix(m + 1),
+        : m_stride(m + 1), m_arena((8 * kContexts + 2) * (m + 1)),
           m_has_positive_gap(has_positive_gap)
     {
+        /* The runs sit end to end in the one allocation, in the order they are
+           declared: eight of them span every context, and the two that depend on
+           the query position alone are one stride each. One object to the
+           allocator however many terms a profile holds, and no padding between
+           the runs -- a run's own start decides its alignment. */
+        const auto wide = kContexts * m_stride;
+        int* p = m_arena.get();
+        m_m_from_m = p;         p += wide;
+        m_m_from_ix = p;        p += wide;
+        m_m_from_iy = p;        p += wide;
+        m_m_open = p;           p += wide;
+        m_close = p;            p += wide;
+        m_iy_from_m = p;        p += wide;
+        m_ix_from_m = p;        p += wide;
+        m_ix_extend = p;        p += m_stride;
+        m_ix_from_m_scan = p;   p += wide;
+        m_ix_prefix = p;
+
         /* No target dependence: a query bulge over a gap on both sides. */
         for (auto i = 2u; i <= m; i++) {
             m_ix_extend[i] = dsm[query_sequence[i - 2]][query_sequence[i - 1]][GAP][GAP];
@@ -115,17 +129,17 @@ public:
        which is legitimate because this term has no target dependence. */
     const int* ix_extend() const
     {
-        return m_ix_extend.get();
+        return m_ix_extend;
     }
 
     RowView row(unsigned ctx) const
     {
         const auto off = m_offsets[ctx];
-        return {m_m_from_m.get() + off,  m_m_from_ix.get() + off, m_m_from_iy.get() + off,
-                m_m_open.get() + off,    m_close.get() + off,     m_iy_from_m.get() + off,
-                m_ix_from_m.get() + off, m_ix_extend.get(),
-                m_ix_from_m_scan.get() + off,
-                m_ix_prefix.get(),       m_iy_extend[ctx]};
+        return {m_m_from_m + off,  m_m_from_ix + off, m_m_from_iy + off,
+                m_m_open + off,    m_close + off,     m_iy_from_m + off,
+                m_ix_from_m + off, m_ix_extend,
+                m_ix_from_m_scan + off,
+                m_ix_prefix,       m_iy_extend[ctx]};
     }
 
 private:
@@ -136,16 +150,18 @@ private:
        position, so the stride multiply it replaces is on the sweep's hot path. */
     std::uint32_t m_offsets[kContexts];
 
-    MallocRAII<int> m_m_from_m;
-    MallocRAII<int> m_m_from_ix;
-    MallocRAII<int> m_m_from_iy;
-    MallocRAII<int> m_m_open;
-    MallocRAII<int> m_close;
-    MallocRAII<int> m_iy_from_m;
-    MallocRAII<int> m_ix_from_m;
-    MallocRAII<int> m_ix_extend;
-    MallocRAII<int> m_ix_from_m_scan;
-    MallocRAII<int> m_ix_prefix;
+    /* One allocation carved into the ten runs, which point into it. */
+    MallocRAII<int> m_arena;
+    int* m_m_from_m;
+    int* m_m_from_ix;
+    int* m_m_from_iy;
+    int* m_m_open;
+    int* m_close;
+    int* m_iy_from_m;
+    int* m_ix_from_m;
+    int* m_ix_extend;
+    int* m_ix_from_m_scan;
+    int* m_ix_prefix;
     int m_iy_extend[kContexts]{};
     bool m_has_positive_gap;
 };

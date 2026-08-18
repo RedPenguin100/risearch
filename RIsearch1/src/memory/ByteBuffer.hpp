@@ -23,6 +23,29 @@ public:
     ByteBuffer(const ByteBuffer&) = delete;
     ByteBuffer& operator=(const ByteBuffer&) = delete;
 
+    /* Movable so a buffer can live in a container that relocates its elements.
+       The source is left empty and owning nothing. */
+    ByteBuffer(ByteBuffer&& rhs) noexcept
+        : m_data(rhs.m_data), m_size(rhs.m_size), m_capacity(rhs.m_capacity)
+    {
+        rhs.m_data = nullptr;
+        rhs.m_size = 0;
+        rhs.m_capacity = 0;
+    }
+    ByteBuffer& operator=(ByteBuffer&& rhs) noexcept
+    {
+        if (this != &rhs) {
+            std::free(m_data);
+            m_data = rhs.m_data;
+            m_size = rhs.m_size;
+            m_capacity = rhs.m_capacity;
+            rhs.m_data = nullptr;
+            rhs.m_size = 0;
+            rhs.m_capacity = 0;
+        }
+        return *this;
+    }
+
     void clear()
     {
         m_size = 0;

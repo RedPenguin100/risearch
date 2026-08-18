@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "align/optimization/QueryProfile.h"
+#include "memory/ByteBuffer.hpp"
 
 /* Every query's profile, built once and kept.
  *
@@ -21,10 +22,10 @@
  * records it holds, so past a budget the profile is built into one slot that
  * every such query shares, which is what each of them did for itself before.
  *
- * TODO: the two vectors are one allocation each per query and a second pass
- * over the sequence; a flat run of both, sized once the query count is known,
- * would do the same job with less. Worth revisiting alongside the query file
- * being re-read per target record, which is what makes any of this necessary.
+ * TODO: an entry is two allocations per query and a second pass over the
+ * sequence; a flat run of both, sized once the query count is known, would do
+ * the same job with less. Worth revisiting alongside the query file being
+ * re-read per target record, which is what makes any of this necessary.
  */
 class AllQueryProfiles {
 public:
@@ -48,7 +49,8 @@ public:
         Entry& e = keep ? m_entries[index] : m_shared;
         e.profile = std::make_unique<QueryProfile>(query, m, dsm, has_positive_gap);
         if (keep) {
-            e.sequence.assign(query, query + m);
+            e.sequence.clear();
+            e.sequence.append(reinterpret_cast<const char*>(query), m);
             m_bytes += bytes;
         }
         return *e.profile;
@@ -64,13 +66,13 @@ private:
     }
 
     struct Entry {
-        std::vector<unsigned char> sequence;
+        ByteBuffer sequence;
         std::unique_ptr<QueryProfile> profile;
 
         bool holds(const unsigned char* query, std::uint32_t m) const
         {
             return profile && sequence.size() == m &&
-                   std::memcmp(sequence.data(), query, m) == 0;
+                   std::memcmp(sequence.unsigned_data(), query, m) == 0;
         }
     };
 

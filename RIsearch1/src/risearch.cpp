@@ -40,14 +40,15 @@
 
 int main(int argc, char* argv[])
 {
-    /* A run aligns one query against one target at a time and allocates the
-       same shapes for each of them, so the scratch it frees at the end of a pair
-       is the size the next pair asks for. Left to itself the allocator returns
-       that memory to the kernel as soon as the free leaves enough of it at the
-       top of the heap, and the next pair faults every page of it back in: on the
-       two megabase benchmark the heap is handed back and regrown a few hundred
-       times and the run takes sixty thousand minor faults where three hundred
-       would do. Holding on to it is what these thresholds ask for. */
+    /* Set the minimum amount of memory that gets given back to the OS, so a run
+       page-faults less when it allocates and runs faster. This does not raise
+       memory usage to the set amount -- the process just does not drop back
+       below what it has already spiked to.
+
+       Both lines are needed: setting only the trim threshold freezes the size
+       above which an allocation is served by mmap instead of the heap, and the
+       buffers a pair reuses then come from fresh pages every time, which faults
+       more than leaving the allocator alone. */
 #if defined(__GLIBC__)
     mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
     mallopt(M_MMAP_THRESHOLD, 64 * 1024 * 1024);

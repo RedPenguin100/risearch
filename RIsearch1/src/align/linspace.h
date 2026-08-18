@@ -6,7 +6,7 @@
 #include "HitReporter.h"
 #include "RunningMax.h"
 #include "align/optimization/QueryProfile.h"
-#include "align/optimization/QueryProfileCache.h"
+#include "align/optimization/AllQueryProfiles.h"
 #include "align/ScoreTarget.h"
 #include "cli.h"
 #include "energy.hpp"
@@ -30,7 +30,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
              const char* qname,                    /* query name */
              const char* tname,                    /* target name */
              const config_st& config,
-             QueryProfileCache& profile_cache,     /* profiles kept across target records */
+             AllQueryProfiles& all_profiles,     /* profiles kept across target records */
              std::size_t query_index)
 {
     const auto m = static_cast<short>(query_sequence_ix.size());
@@ -54,9 +54,9 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     int* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
 
 
-    /* Held across target records where the cache has room, rebuilt where not. */
+    /* Built once per query and held; past the budget, rebuilt here each time. */
     const QueryProfile& profile =
-        profile_cache.get(query_index, query_sequence, m, dsm, has_positive_gap(dsm));
+        all_profiles.get(query_index, query_sequence, m, dsm, has_positive_gap(dsm));
 
     M[0][0] = Ix[0][0] = Iy[0][0] = 0;
 

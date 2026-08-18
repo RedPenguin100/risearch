@@ -4,13 +4,13 @@
 
 #include "align/force_start.h"
 #include "align/linspace.h"
-#include "align/optimization/QueryProfileCache.h"
+#include "align/optimization/AllQueryProfiles.h"
 #include "cli.h"
 #include "memory/ByteBuffer.hpp"
 
 static void run_alignment(const ByteBuffer& query_seq, const ByteBuffer& target_seq,
                           short (&dsm)[6][6][6][6], const char* nameQ, const char* nameT,
-                          const config_st& config, QueryProfileCache& profile_cache,
+                          const config_st& config, AllQueryProfiles& all_profiles,
                           std::size_t query_index)
 {
     // can't align empty sequences
@@ -23,6 +23,6 @@ static void run_alignment(const ByteBuffer& query_seq, const ByteBuffer& target_
                                  dsm, config.mat_name);
     } else {
         RIs_linSpace(query_seq, target_seq, dsm, config.min_score, nameQ, nameT, config,
-                     profile_cache, query_index);
+                     all_profiles, query_index);
     }
 }

@@ -35,7 +35,7 @@
 #include "FastaRAII.h"
 #include "FastaRecord.h"
 #include "align/dispatch.h"
-#include "align/optimization/QueryProfileCache.h"
+#include "align/optimization/AllQueryProfiles.h"
 
 
 int main(int argc, char* argv[])
@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
 
     /* One per run: a profile depends on the query and the matrix, and the
        matrix does not change. */
-    QueryProfileCache profile_cache;
+    AllQueryProfiles all_profiles;
 
     if (config.seq2_file_name) {
         /* target given as file - or STDIN */
@@ -108,7 +108,7 @@ int main(int argc, char* argv[])
                                target_record.get_name(), len_seq2);
 
                     run_alignment(query_seq_indices, target_seq_indices, dsm, query_record.get_name(),
-                                  target_record.get_name(), config, profile_cache,
+                                  target_record.get_name(), config, all_profiles,
                                   static_cast<std::size_t>(query_count - 1));
                 }
             } else if (config.seq1_cli) {
@@ -125,7 +125,7 @@ int main(int argc, char* argv[])
                            target_record.get_name(), len_seq2);
 
                 run_alignment(query_seq_indices, target_seq_indices, dsm, "from_cli", target_record.get_name(),
-                              config, profile_cache, 0);
+                              config, all_profiles, 0);
 
             } else {
                 fprintf(stderr, "No query seq given!");
@@ -165,7 +165,7 @@ int main(int argc, char* argv[])
                 }
 
                 run_alignment(qseqIx, target_seq_indices, dsm, query_record.get_name(), "from_cli",
-                              config, profile_cache, query_index++);
+                              config, all_profiles, query_index++);
             }
         } else if (config.seq1_cli) {
             /* query given as command line parameter */
@@ -182,7 +182,7 @@ int main(int argc, char* argv[])
                        len_seq2);
 
             run_alignment(qseqIx, target_seq_indices, dsm, "from_cli", "from_cli", config,
-                          profile_cache, 0);
+                          all_profiles, 0);
         } else {
             fprintf(stderr, "No query seq given!");
             /* is caught in getArg already -- alternative run seq against itself!? */

@@ -21,7 +21,7 @@
 #include "cli.h"
 #include "dsm.h"
 #include "align/linspace.h"
-#include "align/optimization/QueryProfileCache.h"
+#include "align/optimization/AllQueryProfiles.h"
 #include "memory/ByteBuffer.hpp"
 
 namespace {
@@ -89,7 +89,7 @@ double measure(int min_score, int repeats)
     std::fflush(stdout);
     testing::internal::CaptureStdout();
     const auto start = std::chrono::steady_clock::now();
-    QueryProfileCache cache;
+    AllQueryProfiles cache;
     for (int r = 0; r < repeats; r++) {
         RIs_linSpace(query, target, dsm, config.min_score, "q", "t", config, cache, 0);
     }

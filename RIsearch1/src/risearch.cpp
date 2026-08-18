@@ -25,6 +25,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdint>
+#include <malloc.h>
 #include <unistd.h>
 
 
@@ -39,6 +40,19 @@
 
 int main(int argc, char* argv[])
 {
+    /* A run aligns one query against one target at a time and allocates the
+       same shapes for each of them, so the scratch it frees at the end of a pair
+       is the size the next pair asks for. Left to itself the allocator returns
+       that memory to the kernel as soon as the free leaves enough of it at the
+       top of the heap, and the next pair faults every page of it back in: on the
+       two megabase benchmark the heap is handed back and regrown a few hundred
+       times and the run takes sixty thousand minor faults where three hundred
+       would do. Holding on to it is what these thresholds ask for. */
+#if defined(__GLIBC__)
+    mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
+    mallopt(M_MMAP_THRESHOLD, 64 * 1024 * 1024);
+#endif
+
     /* values filled in by getArgs from the command line */
     static config_st config;
 

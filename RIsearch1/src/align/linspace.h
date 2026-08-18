@@ -54,15 +54,9 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     int* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
 
 
-    /* Held across target records where the cache has room; built here when not. */
-    const QueryProfile* cached =
+    /* Held across target records where the cache has room, rebuilt where not. */
+    const QueryProfile& profile =
         profile_cache.get(query_index, query_sequence, m, dsm, has_positive_gap(dsm));
-    std::unique_ptr<QueryProfile> owned;
-    if (cached == nullptr) {
-        owned = std::make_unique<QueryProfile>(query_sequence, m, dsm, has_positive_gap(dsm));
-        cached = owned.get();
-    }
-    const QueryProfile& profile = *cached;
 
     M[0][0] = Ix[0][0] = Iy[0][0] = 0;
 

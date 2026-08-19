@@ -39,7 +39,7 @@ public:
           m_config(config), m_qname(qname), m_tname(tname),
           m_reference(reference_from_matrix(config.mat_name)),
           m_M(config.tblen + 1, config.tblen + 1), m_Ix(config.tblen + 1, config.tblen + 1),
-          m_Iy(config.tblen + 1, config.tblen + 1), m_qseq(config.tblen), m_tseq(config.tblen),
+          m_Iy(config.tblen + 1, config.tblen + 1), m_tseq(config.tblen),
           m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen)),
           /* Seven decimal fields, the energy and the separators, plus the two
              names: everything in a line whose length is known up front. */
@@ -55,8 +55,8 @@ public:
     {
         const auto w = extract(pos_i, pos_j);
 
-        RIs(m_qseq.get(), m_tseq.get(), w.qlen, w.tlen, &m_hit, m_config, m_M.get(), m_Ix.get(),
-            m_Iy.get(), m_profile, w.qbeg - 1, m_best.get());
+        RIs(m_query + w.qbeg - 1, m_tseq.get(), w.qlen, w.tlen, &m_hit, m_config, m_M.get(),
+            m_Ix.get(), m_Iy.get(), m_profile, w.qbeg - 1, m_best.get());
 
         const auto energy =
             (m_hit.max + m_config.extension_penalty * m_hit.nucleotide_count() - m_reference) /
@@ -119,16 +119,14 @@ private:
         std::uint32_t tlen;
     };
 
-    /* Clip to at most tblen back from the hit and copy both slices into scratch. */
+    /* Clip to at most tblen back from the hit and copy the target slice into
+       scratch. The query slice is read where it already sits. */
     Window extract(std::uint32_t pos_i, std::uint32_t pos_j)
     {
         const auto qbeg = pos_i > m_config.tblen - 1 ? pos_i - (m_config.tblen - 1) : 1;
         const auto tbeg = pos_j > m_config.tblen - 1 ? pos_j - (m_config.tblen - 1) : 1;
         const Window w{qbeg, pos_i - qbeg + 1, pos_j - tbeg + 1};
 
-        for (auto i = 0u; i < w.qlen; i++) {
-            m_qseq[i] = m_query[qbeg - 1 + i];
-        }
         /* Reversed: RIs walks the target forward, and DP row order runs 3'->5'. */
         for (auto i = 0u; i < w.tlen; i++) {
             m_tseq[i] = m_target[m_n - tbeg - i];
@@ -219,7 +217,7 @@ private:
 
     /* Scratch, reused across every hit. */
     MatrixInt m_M, m_Ix, m_Iy;
-    MallocRAII<unsigned char> m_qseq, m_tseq;
+    MallocRAII<unsigned char> m_tseq;
     /* Best M + close per query column; transpose_best_cell reads it. */
     MallocRAII<int> m_best;
     IA m_hit;

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 
@@ -86,11 +88,24 @@ typedef struct config {
     int vicinity;
     char printShort;
     int force_start_val;
-    int tblen;
+    std::uint32_t tblen;
 } config_st;
 
 static const char* DEFAULT_MAT_NAME = "t04";
 static const char* DEFAULT_POS_WEIGHTS = "CRISPR_20nt_3p_5p";
+
+/* getopt hands every option in as text. A length has no reading below zero, and
+   it is kept unsigned, where a negative would wrap into an enormous one. Refuse
+   it where it is read rather than let it through. */
+inline std::uint32_t parse_length_arg(const char* text, char option)
+{
+    const auto value = atoi(text);
+    if (value < 0) {
+        fprintf(stderr, "\nOption -%c takes a length of zero or more, got '%s'.\n\n", option, text);
+        exit(1);
+    }
+    return static_cast<std::uint32_t>(value);
+}
 
 /*TODO possibly several print styles, Vienna-like (one line, but still IA) */
 
@@ -164,7 +179,7 @@ inline void getArgs(int argc, char* argv[], config_st* config)
             config->pos_weights = optarg;
             break;
         case 'l':
-            config->tblen = atoi(optarg);
+            config->tblen = parse_length_arg(optarg, 'l');
             break;
         case 'f':
             config->force_start_val = atoi(optarg);

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "nucleotide.h"
 
 
-[[maybe_unused]] static void printMat(int** mat, int rows, int cols, unsigned char* seq1, unsigned char* seq2)
+[[maybe_unused]] static void printMat(int** mat, int rows, int cols, const unsigned char* seq1, const unsigned char* seq2)
 {
     int i, j;
     printf("\t-");
@@ -22,7 +22,7 @@
     printf("\n\n");
 }
 
-[[maybe_unused]] static void printfloatMat(float** mat, int rows, int cols, unsigned char* seq1, unsigned char* seq2)
+[[maybe_unused]] static void printfloatMat(float** mat, int rows, int cols, const unsigned char* seq1, const unsigned char* seq2)
 {
     int i, j;
     printf("\t-");

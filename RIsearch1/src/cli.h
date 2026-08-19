@@ -7,7 +7,7 @@
 #include <getopt.h>
 #include <climits>
 
-static void usage(const char* progname)
+inline void usage(const char* progname)
 {
     /* This is the fork, not upstream: the search core has been rewritten and
        some results differ. Report our own version -- which CMake reads from
@@ -94,7 +94,7 @@ static const char* DEFAULT_POS_WEIGHTS = "CRISPR_20nt_3p_5p";
 
 /*TODO possibly several print styles, Vienna-like (one line, but still IA) */
 
-static void getArgs(int argc, char* argv[], config_st* config)
+inline void getArgs(int argc, char* argv[], config_st* config)
 {
     config->transpose_matrix_flag = 0;
     config->extension_penalty = 0; /* extension penalty; used to compute dsm */
@@ -195,12 +195,12 @@ static void getArgs(int argc, char* argv[], config_st* config)
 }
 
 
-static bool uses_force_start(const config_st& config)
+inline bool uses_force_start(const config_st& config)
 {
     return config.weighted_positions || config.force_start_val >= 0;
 }
 
-static void validate_force_start_config(const config_st& config)
+inline void validate_force_start_config(const config_st& config)
 {
     if (config.force_start_val < 0) {
         fprintf(stderr, "Parameter -f must be set when using weights (-w).\n");

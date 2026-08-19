@@ -60,7 +60,8 @@ public:
             m_matrices.Ix(), m_matrices.Iy(), m_profile, w.qbeg - 1, m_best.get());
 
         const auto energy =
-            (m_hit.max + m_config.extension_penalty * m_hit.nucleotide_count() - m_reference) /
+            static_cast<double>(m_hit.max + m_config.extension_penalty * m_hit.nucleotide_count() -
+                                m_reference) /
             (-100.0);
 
         if (energy <= m_config.max_energy) {

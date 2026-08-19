@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <climits>
 #include <cstdio>
 
@@ -11,6 +13,7 @@
 #include "energy.hpp"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"
+#include "align/int16_safety.h"
 #include "nucleotide.h"
 #include "operations.h"
 
@@ -21,6 +24,7 @@
    optimised across the boundary. Giving them a caller that already has AVX2 is
    what lets them inline, and the baseline clone keeps the binary running where
    AVX2 is missing. */
+template<typename int_type>
 __attribute__((target_clones("avx2", "default"))) static void
 RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical representation
              const ByteBuffer& target_sequence_ix, // target sequence numerical representation
@@ -45,13 +49,16 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
 
     /* matrices for alignment scores ending in different states */
     // Since we only need 2 rows we can optimize the memory layout.
-    MallocRAII<int> dp_rows(6 * (m + 1));
-    int* const M[2] = {dp_rows.get() + 0 * (m + 1), dp_rows.get() + 1 * (m + 1)};
-    int* const Ix[2] = {dp_rows.get() + 2 * (m + 1), dp_rows.get() + 3 * (m + 1)};
-    int* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
+    MallocRAII<int_type> dp_rows(6 * (m + 1));
+    int_type* const M[2] = {dp_rows.get() + 0 * (m + 1), dp_rows.get() + 1 * (m + 1)};
+    int_type* const Ix[2] = {dp_rows.get() + 2 * (m + 1), dp_rows.get() + 3 * (m + 1)};
+    int_type* const Iy[2] = {dp_rows.get() + 4 * (m + 1), dp_rows.get() + 5 * (m + 1)};
 
 
-    const QueryProfile profile(query_sequence, m, dsm, has_positive_gap(dsm));
+    /* The sweep runs at whichever width the query allows; the traceback always
+       runs at int32, because a window is only as long as the hit it re-aligns and
+       most of them are too short for a sixteen wide block. */
+    const QueryProfile<int_type> profile(query_sequence, m, dsm, has_positive_gap(dsm));
 
     M[0][0] = Ix[0][0] = Iy[0][0] = 0;
 
@@ -67,7 +74,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
      *
      */
     for (auto i = 1u; i <= m; ++i) {
-        Iy[0][i] = M[0][i] = NEGINF;
+        Iy[0][i] = M[0][i] = neg_inf<int_type>();
         Ix[0][i] = 0;
     }
 
@@ -75,7 +82,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     /* init j=1 row */
     /*init first col (i=0) */
     Iy[1][0] = 0;
-    Ix[1][0] = M[1][0] = NEGINF;
+    Ix[1][0] = M[1][0] = neg_inf<int_type>();
 
     // n - 1 is the last nt in target
     M[1][1] = dsm[GAP][query_sequence[0]][GAP][target_sequence[n - 1]];
@@ -84,7 +91,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     running_row_max.set(M[1][1] + dsm[query_sequence[0]][GAP][target_sequence[n - 1]][GAP], 1);
 
     /* (1,1) cell can not be in Ix or Iy state. */
-    Ix[1][1] = Iy[1][1] = NEGINF;
+    Ix[1][1] = Iy[1][1] = neg_inf<int_type>();
 
     const auto t_last = target_sequence[n - 1];
 
@@ -108,7 +115,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
                  Ix[1][i - 1] != 0 ? Ix[1][i - 1] + dsm[q_prev][q_cur][GAP][GAP] : -1);
 
         // There is no previous row, so there can't be a bulge.
-        Iy[1][i] = NEGINF;
+        Iy[1][i] = neg_inf<int_type>();
     }
     running_max.set(running_row_max.score, running_row_max.pos_i, 1);
 
@@ -125,10 +132,12 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     hp[0] = running_row_max.pos_i;
 
 
-    score_target(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
+    score_target<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
 
 
-    HitReporter reporter(query_sequence, target_sequence, n, dsm, profile, config, qname, tname);
+    const QueryProfile<std::int32_t> wide_profile(query_sequence, m, dsm, has_positive_gap(dsm));
+    HitReporter<std::int32_t> reporter(query_sequence, target_sequence, n, dsm, wide_profile, config,
+                                       qname, tname);
 
     reporter.report_sweep(hs, hp, threshold, running_max);
 }

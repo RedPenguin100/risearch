@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "RunningMax.h"
+#include "int16_safety.h"
 #include "nucleotide.h"
 #include "operations.h"
 #include "optimization/QueryProfile.h"
@@ -29,9 +30,10 @@
 /* Inlined into the caller on purpose: there the rows and the profile's tables
    are visibly separate allocations, and out of line the compiler has to assume a
    store through one could land in the other and re-load everything per row. */
+template<typename int_type>
 __attribute__((always_inline)) static inline void
-score_target_scalar(const unsigned char* target_sequence, const QueryProfile& profile,
-                    int* const* M, int* const* Ix, int* const* Iy, int* hs, int* hp, int n,
+score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
+                    int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp, int n,
                     int threshold, RunningMax& running_max)
 {
     const auto m = profile.query_length();
@@ -46,7 +48,7 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile& pr
         const auto target_prev = target_sequence[n - j + 1];
 
         /* DSM caching optimization */
-        const auto context = QueryProfile::context(target_prev, target_current);
+        const auto context = QueryProfile<int_type>::context(target_prev, target_current);
         const auto T = profile.row(context);
         const auto iy_ext = T.iy_extend;
         /* DSM caching optimization */
@@ -59,7 +61,7 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile& pr
         auto row_max = M[currentRow][1] + T.close[1];
 
         // Ix bulges a query nt, impossible in 1st nucleotide
-        Ix[currentRow][1] = NEGINF;
+        Ix[currentRow][1] = neg_inf<int_type>();
 
         // Iy bulges a target nt, j>=2 so bulge possible.
         // Only M can win row max, so we don't take this as a candidate
@@ -129,39 +131,40 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile& pr
 
 /* M and Iy for the eight columns starting at i, and their contribution to the
    row max. Returns M, which the Ix scan reads. */
+template<typename int_type>
 __attribute__((target("avx2"), always_inline)) static inline __m256i
-main_dp_loop_avx2(unsigned i, const QueryProfile::RowView& T, int* m_cur, int* iy_cur,
-                  const int* m_last, const int* ix_last, const int* iy_last, __m256i v_iy_ext,
-                  __m256i* v_row_max)
+main_dp_loop_avx2(unsigned i, const typename QueryProfile<int_type>::RowView& T, int_type* m_cur, int_type* iy_cur,
+                  const int_type* m_last, const int_type* ix_last, const int_type* iy_last,
+                  __m256i v_iy_ext, __m256i* v_row_max)
 {
     /* For each column this block writes, its diagonal predecessor: one target
        position back and one query position back. Adjacent because the columns
        are adjacent; the diagonal is only the -1. */
-    const __m256i m_diag = v_vec_load(m_last + i - 1);
+    const __m256i m_diag = v_vec_load<int_type>(m_last + i - 1);
 
 
     // Assign M with a 4-way max
-    const __m256i m_new = v_max4(
+    const __m256i m_new = v_max4<int_type>(
         /* coming from a match */
-        v_add_unless_zero_or_neg1(m_diag, v_vec_load(T.m_from_m + i)),
+        v_add_unless_zero_or_neg1<int_type>(m_diag, v_vec_load<int_type>(T.m_from_m + i)),
         /* coming from gap in target */
-        v_add(v_vec_load(ix_last + i - 1), v_vec_load(T.m_from_ix + i)),
+        v_add<int_type>(v_vec_load<int_type>(ix_last + i - 1), v_vec_load<int_type>(T.m_from_ix + i)),
         /* coming from gap in query */
-        v_add(v_vec_load(iy_last + i - 1), v_vec_load(T.m_from_iy + i)),
+        v_add<int_type>(v_vec_load<int_type>(iy_last + i - 1), v_vec_load<int_type>(T.m_from_iy + i)),
         /* start fresh */
-        v_vec_load(T.m_open + i));
-    v_vec_store(m_cur + i, m_new);
+        v_vec_load<int_type>(T.m_open + i));
+    v_vec_store<int_type>(m_cur + i, m_new);
 
     // Set max now, position is recovered later
-    *v_row_max = v_max(*v_row_max, v_add(m_new, v_vec_load(T.close + i)));
+    *v_row_max = v_max<int_type>(*v_row_max, v_add<int_type>(m_new, v_vec_load<int_type>(T.close + i)));
 
     // Iy: target nt against a gap. Predecessors are vertical -- previous row,
     // same column -- so no -1 on the address, unlike M's diagonal above.
-    v_vec_store(iy_cur + i, v_max(
+    v_vec_store<int_type>(iy_cur + i, v_max<int_type>(
                               /* pair at previous row, now bulge */
-                              v_add(v_vec_load(m_last + i), v_vec_load(T.iy_from_m + i)),
+                              v_add<int_type>(v_vec_load<int_type>(m_last + i), v_vec_load<int_type>(T.iy_from_m + i)),
                               /* already bulging, add one more */
-                              v_add(v_vec_load(iy_last + i), v_iy_ext)));
+                              v_add<int_type>(v_vec_load<int_type>(iy_last + i), v_iy_ext)));
 
     return m_new;
 }
@@ -173,17 +176,18 @@ main_dp_loop_avx2(unsigned i, const QueryProfile::RowView& T, int* m_cur, int* i
  * back through memory. The value returned is the carry the next block starts
  * from: lane 7 of the running max, which is its maximum over the whole block,
  * broadcast so that the max above needs no shuffling. */
+template<typename int_type>
 __attribute__((target("avx2"), always_inline)) static inline __m256i
-ix_dp_loop_avx2(int* ix_out, const int* ix_from_m_scan, const int* ix_prefix, __m256i m_left,
-                __m256i ix_carry)
+ix_dp_loop_avx2(int_type* ix_out, const int_type* ix_from_m_scan, const int_type* ix_prefix,
+                __m256i m_left, __m256i ix_carry)
 {
     // Ix: query nt against a gap
-    const __m256i candidates = v_add(m_left, v_vec_load(ix_from_m_scan));
-    const __m256i best = v_max(v_prefix_max(candidates), ix_carry);
+    const __m256i candidates = v_add<int_type>(m_left, v_vec_load<int_type>(ix_from_m_scan));
+    const __m256i best = v_max<int_type>(v_prefix_max<int_type>(candidates), ix_carry);
     /* Adding ix_prefix back turns the carried quantity into the real Ix, which
        is what the next row and the traceback read. */
-    v_vec_store(ix_out, v_add(best, v_vec_load(ix_prefix)));
-    return _mm256_permutevar8x32_epi32(best, v_int_to_avx2(7));
+    v_vec_store<int_type>(ix_out, v_add<int_type>(best, v_vec_load<int_type>(ix_prefix)));
+    return v_broadcast_last<int_type>(best);
 }
 
 /* The same recurrence, eight query positions at a time. Differences from the
@@ -215,67 +219,70 @@ ix_dp_loop_avx2(int* ix_out, const int* ix_from_m_scan, const int* ix_prefix, __
  * work to cover the load anyway, and the shift that replaces it costs about as
  * much as it saves.
  */
+template<typename int_type>
 __attribute__((target("avx2"))) static void
-score_target_avx2(const unsigned char* target_sequence, const QueryProfile& profile, int* const* M,
-                  int* const* Ix, int* const* Iy, int* hs, int* hp, int n, int threshold,
-                  RunningMax& running_max)
+score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
+                  int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
+                  int n, int threshold, RunningMax& running_max)
 {
     const auto m = profile.query_length();
 
     /* Row j is written to row j % 2, so the first row here, j = 2, writes row 0;
        swapping the two pointers at the end of each step is the same thing and
        keeps the row addresses in registers. */
-    int* m_cur = M[0];
-    int* m_last = M[1];
-    int* ix_cur = Ix[0];
-    int* ix_last = Ix[1];
-    int* iy_cur = Iy[0];
-    int* iy_last = Iy[1];
+    int_type* m_cur = M[0];
+    int_type* m_last = M[1];
+    int_type* ix_cur = Ix[0];
+    int_type* ix_last = Ix[1];
+    int_type* iy_cur = Iy[0];
+    int_type* iy_last = Iy[1];
 
     for (auto j = 2u; j <= n; j++) {
         const auto target_current = target_sequence[n - j];
         const auto target_prev = target_sequence[n - j + 1];
 
-        const auto context = QueryProfile::context(target_prev, target_current);
+        const auto context = QueryProfile<int_type>::context(target_prev, target_current);
         const auto T = profile.row(context);
         const auto iy_ext = T.iy_extend;
 
         /* Column 1 is the query's first nt, nothing can precede it */
         m_cur[1] = MAX(0, T.m_open[1]);
         auto row_max = m_cur[1] + T.close[1];
-        ix_cur[1] = NEGINF;
+        ix_cur[1] = neg_inf<int_type>();
         iy_cur[1] = MAX(m_last[1] + T.iy_from_m[1], iy_last[1] + iy_ext);
         /* finished init of i=1 col */
 
-        const __m256i v_iy_ext = v_int_to_avx2(iy_ext);
-        __m256i v_row_max = v_int_to_avx2(row_max);
+        const __m256i v_iy_ext = v_int_to_avx2<int_type>(iy_ext);
+        __m256i v_row_max = v_int_to_avx2<int_type>(row_max);
 
         /* M at the column just left of the scan's first block, and the carry it
            enters with -- what Ix[1] holds, so the first block sees exactly what
            the serial recurrence would have carried into it. */
-        __m256i m_left = v_int_to_avx2(m_cur[1]);
-        __m256i v_ix_carry = v_int_to_avx2(NEGINF);
+        __m256i m_left = v_int_to_avx2<int_type>(m_cur[1]);
+        __m256i v_ix_carry = v_int_to_avx2<int_type>(neg_inf<int_type>());
 
         /* Begin main DP */
+        constexpr auto kBlock = v_lanes<int_type>();
         auto start = 2u;
-        for (; start + 7 <= m; start += 8) {
-            const __m256i m_block = main_dp_loop_avx2(start, T, m_cur, iy_cur, m_last, ix_last,
+        for (; start + kBlock - 1 <= m; start += kBlock) {
+            const __m256i m_block = main_dp_loop_avx2<int_type>(start, T, m_cur, iy_cur, m_last, ix_last,
                                                       iy_last, v_iy_ext, &v_row_max);
             // The separate ix loop in a separate function
             v_ix_carry =
-                ix_dp_loop_avx2(ix_cur + start, T.ix_from_m_scan + start, T.ix_prefix + start,
-                                v_shifted_left_one(m_left, m_block), v_ix_carry);
+                ix_dp_loop_avx2<int_type>(ix_cur + start, T.ix_from_m_scan + start, T.ix_prefix + start,
+                                v_shifted_left_one<int_type>(m_left, m_block), v_ix_carry);
             m_left = m_block;
         }
 
-        // Fewer than 8 columns need special case for main DP
+        // Fewer than a block's columns need special case for main DP
         if (start <= m) {
-            main_dp_loop_avx2(m - 7, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext,
+            main_dp_loop_avx2<int_type>(m - (kBlock - 1), T, m_cur, iy_cur, m_last, ix_last, iy_last,
+                              v_iy_ext,
                               &v_row_max);
         }
-        row_max = v_hmax(v_row_max);
+        row_max = v_hmax<int_type>(v_row_max);
 
-        // Fewer than 8 columns need special case for main IX DP
+        // Fewer than a block's columns need special case for main IX DP
         // Ix can't re-use the function like main_dp because an overlap behaves differently.
         for (auto i = start; i <= m; ++i) {
             ix_cur[i] = MAX(m_cur[i - 1] + T.ix_from_m[i], ix_cur[i - 1] + T.ix_extend[i]);
@@ -313,22 +320,24 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile& prof
 
 /* The entry point the alignment calls. Inlined for the same reason
    score_target_scalar is. */
+template<typename int_type>
 __attribute__((always_inline)) static inline void
-score_target(const unsigned char* target_sequence, const QueryProfile& profile, int* const* M,
-             int* const* Ix, int* const* Iy, int* hs, int* hp, int n, int threshold,
+score_target(const unsigned char* target_sequence, const QueryProfile<int_type>& profile, int_type* const* M,
+             int_type* const* Ix, int_type* const* Iy, int* hs, int* hp, int n, int threshold,
              RunningMax& running_max)
 {
 #if RISEARCH1_HAS_AVX2
     // No upside from using AVX2 for small target sizes
-    if (profile.query_length() <= 8) {
-        score_target_scalar(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
+    if (profile.query_length() <= v_lanes<int_type>()) {
+        score_target_scalar<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
         return;
     }
     // Only use AVX2 if the CPU supports
     if (CPU_HAS_AVX2) {
-        score_target_avx2(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
+        score_target_avx2<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
+                               running_max);
         return;
     }
 #endif
-    score_target_scalar(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
+    score_target_scalar<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
 }

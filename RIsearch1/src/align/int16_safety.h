@@ -20,6 +20,26 @@
 static constexpr short NEG_INF_SHORT = SHRT_MIN;
 
 /**
+ * What an unreachable state holds, at whichever width the rows are kept. NEGINF
+ * is INT_MIN / 2 and truncates to 0 in a short -- which is a real score meaning
+ * no alignment -- so a row written at one width must never take the other's.
+ */
+template<typename int_type>
+constexpr int_type neg_inf();
+
+template<>
+constexpr std::int32_t neg_inf<std::int32_t>()
+{
+    return NEGINF;
+}
+
+template<>
+constexpr std::int16_t neg_inf<std::int16_t>()
+{
+    return NEG_INF_SHORT;
+}
+
+/**
  * Does extending a target bulge pay? Iy recurses down the target -- Iy[j][i] reads
  * Iy[j-1][i] -- so such a run is as long as the target and the score has no bound
  * at all. Reachable: a negative -d turns the extension into a bonus.

@@ -89,7 +89,7 @@ double measure(int min_score, int repeats)
     testing::internal::CaptureStdout();
     const auto start = std::chrono::steady_clock::now();
     for (int r = 0; r < repeats; r++) {
-        RIs_linSpace(query, target, dsm, config.min_score, "q", "t", config);
+        RIs_linSpace<std::int32_t>(query, target, dsm, config.min_score, "q", "t", config);
     }
     const auto elapsed = std::chrono::steady_clock::now() - start;
     testing::internal::GetCapturedStdout();

@@ -4,18 +4,19 @@
 #include <cstdio>
 #include <cstdlib>
 
-static int** allocIntMatrix(std::uint32_t rows, std::uint32_t cols)
+template<typename int_type>
+static int_type** allocMatrix(std::uint32_t rows, std::uint32_t cols)
 {
-    const auto pointer_bytes = static_cast<std::size_t>(rows) * sizeof(int*);
-    const auto data_bytes = static_cast<std::size_t>(rows) * cols * sizeof(int);
+    const auto pointer_bytes = static_cast<std::size_t>(rows) * sizeof(int_type*);
+    const auto data_bytes = static_cast<std::size_t>(rows) * cols * sizeof(int_type);
 
-    int** m = reinterpret_cast<int**>(malloc(pointer_bytes + data_bytes));
+    int_type** m = reinterpret_cast<int_type**>(malloc(pointer_bytes + data_bytes));
     if (!m) {
-        printf("Cannot allocate integer matrix with %u rows and %u cols\n", rows, cols);
+        printf("Cannot allocate matrix with %u rows and %u cols\n", rows, cols);
         exit(1);
     }
 
-    int* data = reinterpret_cast<int*>(m + rows);
+    int_type* data = reinterpret_cast<int_type*>(m + rows);
     for (auto i = 0u; i < rows; i++) {
         m[i] = data + static_cast<std::size_t>(i) * cols;
     }
@@ -40,7 +41,8 @@ static float** allocFloatMatrix(std::uint32_t rows, std::uint32_t cols)
     return m;
 }
 
-static void freeIntMatrix(int** m, std::uint32_t)
+template<typename int_type>
+static void freeMatrix(int_type** m, std::uint32_t)
 {
     free(m);
 }

@@ -2,13 +2,13 @@
 #include "matrix_operations.h"
 
 MatrixInt::MatrixInt(std::uint32_t rows, std::uint32_t cols)
-    : m_buffer(allocIntMatrix(rows, cols)), m_rows(rows), m_cols(cols)
+    : m_buffer(allocMatrix<int>(rows, cols)), m_rows(rows), m_cols(cols)
 {
 }
 
 MatrixInt::~MatrixInt()
 {
-    freeIntMatrix(m_buffer, m_rows);
+    freeMatrix<int>(m_buffer, m_rows);
 }
 
 int** MatrixInt::get() const

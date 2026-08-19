@@ -84,6 +84,25 @@ static RunningMax transpose_best_cell(const unsigned char* target_seq, int m, in
     return running_max;
 }
 
+/* Row 0 and column 0 hold the same values whatever the window, so they are set
+   once for the whole matrix and no fill writes them. */
+static void ris_fill_bounds(int** M, int** Ix, int** Iy, int rows, int cols)
+{
+    M[0][0] = Ix[0][0] = Iy[0][0] = 0;
+
+    // Target position 0, every query position
+    for (auto i = 1; i < cols; i++) {
+        Iy[0][i] = M[0][i] = NEGINF; /* not possible before beginning of target seq */
+        Ix[0][i] = 0;
+    }
+
+    // Query position 0, every target position
+    for (auto j = 1; j < rows; j++) {
+        Ix[j][0] = M[j][0] = NEGINF;
+        Iy[j][0] = 0;
+    }
+}
+
 /* Fills the three matrices and, per query column, the best M + close seen in any
  * target position. RIs backtracks through what this leaves behind, so every cell
  * is kept rather than two rows as the sweep keeps.
@@ -94,20 +113,6 @@ static void ris_fill_scalar(const unsigned char* target_seq, int m, int n, int**
 {
     const int* const ix_ext = profile.ix_extend();
 
-
-    M[0][0] = Ix[0][0] = Iy[0][0] = 0;
-
-    // Target position 0, every query position
-    for (auto i = 1; i <= m; i++) {
-        Iy[0][i] = M[0][i] = NEGINF; /* not possible before beginning of target seq */
-        Ix[0][i] = 0;
-    }
-
-    // Query position 0, every target position
-    for (auto j = 1; j <= n; j++) {
-        Ix[j][0] = M[j][0] = NEGINF;
-        Iy[j][0] = 0;
-    }
 
     /*
      * Query position 1 and target position 1 have to be handled explicitly since
@@ -224,17 +229,6 @@ ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, 
               const QueryProfile& profile, int q_offset, int* best, RunningVectorMax& first_row)
 {
     const int* const ix_ext = profile.ix_extend();
-
-    M[0][0] = Ix[0][0] = Iy[0][0] = 0;
-
-    for (auto i = 1; i <= m; i++) {
-        Iy[0][i] = M[0][i] = NEGINF;
-        Ix[0][i] = 0;
-    }
-    for (auto j = 1; j <= n; j++) {
-        Ix[j][0] = M[j][0] = NEGINF;
-        Iy[j][0] = 0;
-    }
 
     const auto T = profile.row(QueryProfile::context(GAP, target_seq[0]));
     const int* const ix_from_m_1 = T.ix_from_m;

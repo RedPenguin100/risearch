@@ -46,6 +46,7 @@ public:
           m_line_fixed(128 + std::strlen(qname) + std::strlen(tname))
     {
         m_line.reserve(m_line_fixed);
+        ris_fill_bounds(m_M.get(), m_Ix.get(), m_Iy.get(), config.tblen + 1, config.tblen + 1);
     }
 
     /* pos_i, pos_j: the DP cell the hit ends at. score: what the sweep recorded

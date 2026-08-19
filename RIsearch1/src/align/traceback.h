@@ -5,12 +5,24 @@
 #include "InteractionAlignment.h"
 #include "RunningMax.h"
 #include "cli.h"
-#include "memory/ByteBuffer.hpp"
 #include "nucleotide.h" /* GAP, NEGINF */
 #include "operations.h"
 #include "avx2/primitives.h"
 #include "optimization/QueryProfile.h"
 #include "string_util.h"
+
+
+// For sequences that iterate target[n - 1 - i]..
+// we can point start to target[n - 1] and iterate regularly
+// also type safety helps with confusion.
+struct ReversedSequence {
+    const unsigned char* start;
+
+    unsigned char operator[](int i) const
+    {
+        return start[-i];
+    }
+};
 
 enum class TraceState { TRACE_M = 0, TRACE_IX = 1, TRACE_IY = 2, TRACE_DONE = 3 };
 
@@ -27,10 +39,11 @@ static char pair_symbol(unsigned char q, unsigned char t)
     return ' ';
 }
 
-static void emit_pair(IA* hit, int l, const unsigned char* q, const unsigned char* t, int i, int j)
+static void emit_pair(IA* hit, int l, const unsigned char* query, ReversedSequence target, int i,
+                      int j)
 {
-    const auto qn = q[i];
-    const auto tn = t[j];
+    const auto qn = query[i];
+    const auto tn = target[j];
     hit->ali_seq1[l] = index2nt(qn);
     hit->ali_ia[l] = pair_symbol(qn, tn);
     hit->ali_seq2[l] = index2nt(tn);
@@ -43,7 +56,7 @@ static void emit_query_bulge(IA* hit, int l, const unsigned char* q, int i)
     hit->ali_seq2[l] = '-';
 }
 
-static void emit_target_bulge(IA* hit, int l, const unsigned char* t, int j)
+static void emit_target_bulge(IA* hit, int l, ReversedSequence t, int j)
 {
     hit->ali_seq1[l] = '-';
     hit->ali_ia[l] = ' ';
@@ -55,7 +68,7 @@ static void emit_target_bulge(IA* hit, int l, const unsigned char* t, int j)
  * The old version was transposed. When transposing we unlocked performance, but changed
  * the order of the "best hits", so here we transpose it back without losing major performance.
  */
-static RunningMax transpose_best_cell(const unsigned char* target_seq, int m, int n, int** M,
+static RunningMax transpose_best_cell(ReversedSequence target_seq, int m, int n, int** M,
                                       const QueryProfile& profile, int q_offset, const int* best,
                                       const RunningVectorMax& first_row)
 {
@@ -88,7 +101,7 @@ static RunningMax transpose_best_cell(const unsigned char* target_seq, int m, in
  * target position. RIs backtracks through what this leaves behind, so every cell
  * is kept rather than two rows as the sweep keeps.
  */
-static void ris_fill_scalar(const unsigned char* target_seq, int m, int n, int** M, int** Ix,
+static void ris_fill_scalar(ReversedSequence target_seq, int m, int n, int** M, int** Ix,
                             int** Iy, const QueryProfile& profile, int q_offset, int* best,
                             RunningVectorMax& first_row)
 {
@@ -206,7 +219,7 @@ static void ris_fill_scalar(const unsigned char* target_seq, int m, int n, int**
  *    serially.
  */
 __attribute__((target("avx2"))) static void
-ris_fill_avx2(const unsigned char* target_seq, int m, int n, int** M, int** Ix, int** Iy,
+ris_fill_avx2(ReversedSequence target_seq, int m, int n, int** M, int** Ix, int** Iy,
               const QueryProfile& profile, int q_offset, int* best, RunningVectorMax& first_row)
 {
     const int* const ix_ext = profile.ix_extend();
@@ -350,7 +363,7 @@ static bool ris_fill_is_vectorized(int m, const QueryProfile& profile)
 #endif
 }
 
-static void ris_fill(const unsigned char* target_seq, int m, int n, int** M, int** Ix, int** Iy,
+static void ris_fill(ReversedSequence target_seq, int m, int n, int** M, int** Ix, int** Iy,
                      const QueryProfile& profile, int q_offset, int* best,
                      RunningVectorMax& first_row)
 {
@@ -364,7 +377,7 @@ static void ris_fill(const unsigned char* target_seq, int m, int n, int** M, int
 }
 
 static void RIs(const unsigned char* query_seq,  /* query sequence - numeric representation */
-                const unsigned char* target_seq, /* target sequence - reversed */
+                ReversedSequence target_seq,     /* target sequence - reversed */
                 int m,                           /* query seq length */
                 int n,                           /* target seq length */
                 IA* hit,                         /* pointer to struct, fill results */

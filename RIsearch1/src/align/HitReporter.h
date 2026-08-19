@@ -38,7 +38,7 @@ public:
         : m_query(query), m_target(target), m_n(n), m_dsm(dsm), m_profile(profile),
           m_config(config), m_qname(qname), m_tname(tname),
           m_reference(reference_from_matrix(config.mat_name)),
-          m_matrices(config.tblen), m_tseq(config.tblen),
+          m_matrices(config.tblen),
           m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen)),
           /* Seven decimal fields, the energy and the separators, plus the two
              names: everything in a line whose length is known up front. */
@@ -53,7 +53,7 @@ public:
     {
         const auto w = extract(pos_i, pos_j);
 
-        RIs(m_query + w.qbeg - 1, m_tseq.get(), w.qlen, w.tlen, &m_hit, m_config, m_matrices.M(),
+        RIs(m_query + w.qbeg - 1, w.target, w.qlen, w.tlen, &m_hit, m_config, m_matrices.M(),
             m_matrices.Ix(), m_matrices.Iy(), m_profile, w.qbeg - 1, m_best.get());
 
         const auto energy =
@@ -115,21 +115,17 @@ private:
         std::uint32_t qbeg; /* 1-based query position the window starts at */
         std::uint32_t qlen;
         std::uint32_t tlen;
+        ReversedSequence target;
     };
 
-    /* Clip to at most tblen back from the hit and copy the target slice into
-       scratch. The query slice is read where it already sits. */
+    /* Clip to at most tblen back from the hit. Both slices are read where they
+       already sit; the target's runs backwards, which its view accounts for. */
     Window extract(std::uint32_t pos_i, std::uint32_t pos_j)
     {
         const auto qbeg = pos_i > m_config.tblen - 1 ? pos_i - (m_config.tblen - 1) : 1;
         const auto tbeg = pos_j > m_config.tblen - 1 ? pos_j - (m_config.tblen - 1) : 1;
-        const Window w{qbeg, pos_i - qbeg + 1, pos_j - tbeg + 1};
-
-        /* Reversed: RIs walks the target forward, and DP row order runs 3'->5'. */
-        for (auto i = 0u; i < w.tlen; i++) {
-            m_tseq[i] = m_target[m_n - tbeg - i];
-        }
-        return w;
+        return Window{qbeg, pos_i - qbeg + 1, pos_j - tbeg + 1,
+                      ReversedSequence{m_target + m_n - tbeg}};
     }
 
     /* Formats one line into the reporter's buffer and writes it.
@@ -215,7 +211,6 @@ private:
 
     /* Scratch, reused across every hit. */
     MatrixStore m_matrices;
-    MallocRAII<unsigned char> m_tseq;
     /* Best M + close per query column; transpose_best_cell reads it. */
     MallocRAII<int> m_best;
     IA m_hit;

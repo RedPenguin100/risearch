@@ -84,25 +84,6 @@ static RunningMax transpose_best_cell(const unsigned char* target_seq, int m, in
     return running_max;
 }
 
-/* Row 0 and column 0 hold the same values whatever the window, so they are set
-   once for the whole matrix and no fill writes them. */
-static void ris_fill_bounds(int** M, int** Ix, int** Iy, int rows, int cols)
-{
-    M[0][0] = Ix[0][0] = Iy[0][0] = 0;
-
-    // Target position 0, every query position
-    for (auto i = 1; i < cols; i++) {
-        Iy[0][i] = M[0][i] = NEGINF; /* not possible before beginning of target seq */
-        Ix[0][i] = 0;
-    }
-
-    // Query position 0, every target position
-    for (auto j = 1; j < rows; j++) {
-        Ix[j][0] = M[j][0] = NEGINF;
-        Iy[j][0] = 0;
-    }
-}
-
 /* Fills the three matrices and, per query column, the best M + close seen in any
  * target position. RIs backtracks through what this leaves behind, so every cell
  * is kept rather than two rows as the sweep keeps.

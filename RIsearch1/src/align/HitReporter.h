@@ -1,20 +1,20 @@
 #pragma once
 
+#include <fmt/compile.h>
+#include <fmt/format.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 
-#include <fmt/compile.h>
-#include <fmt/format.h>
-
 #include "InteractionAlignment.h"
+#include "MatrixStore.h"
 #include "RunningMax.h"
 #include "cli.h"
-#include "operations.h"
 #include "energy.hpp"
-#include "math/Matrix.h"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"
+#include "operations.h"
 #include "optimization/QueryProfile.h"
 #include "traceback.h"
 
@@ -38,15 +38,13 @@ public:
         : m_query(query), m_target(target), m_n(n), m_dsm(dsm), m_profile(profile),
           m_config(config), m_qname(qname), m_tname(tname),
           m_reference(reference_from_matrix(config.mat_name)),
-          m_M(config.tblen + 1, config.tblen + 1), m_Ix(config.tblen + 1, config.tblen + 1),
-          m_Iy(config.tblen + 1, config.tblen + 1), m_tseq(config.tblen),
+          m_matrices(config.tblen), m_tseq(config.tblen),
           m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen)),
           /* Seven decimal fields, the energy and the separators, plus the two
              names: everything in a line whose length is known up front. */
           m_line_fixed(128 + std::strlen(qname) + std::strlen(tname))
     {
         m_line.reserve(m_line_fixed);
-        ris_fill_bounds(m_M.get(), m_Ix.get(), m_Iy.get(), config.tblen + 1, config.tblen + 1);
     }
 
     /* pos_i, pos_j: the DP cell the hit ends at. score: what the sweep recorded
@@ -55,8 +53,8 @@ public:
     {
         const auto w = extract(pos_i, pos_j);
 
-        RIs(m_query + w.qbeg - 1, m_tseq.get(), w.qlen, w.tlen, &m_hit, m_config, m_M.get(),
-            m_Ix.get(), m_Iy.get(), m_profile, w.qbeg - 1, m_best.get());
+        RIs(m_query + w.qbeg - 1, m_tseq.get(), w.qlen, w.tlen, &m_hit, m_config, m_matrices.M(),
+            m_matrices.Ix(), m_matrices.Iy(), m_profile, w.qbeg - 1, m_best.get());
 
         const auto energy =
             (m_hit.max + m_config.extension_penalty * m_hit.nucleotide_count() - m_reference) /
@@ -216,7 +214,7 @@ private:
     float m_reference;
 
     /* Scratch, reused across every hit. */
-    MatrixInt m_M, m_Ix, m_Iy;
+    MatrixStore m_matrices;
     MallocRAII<unsigned char> m_tseq;
     /* Best M + close per query column; transpose_best_cell reads it. */
     MallocRAII<int> m_best;

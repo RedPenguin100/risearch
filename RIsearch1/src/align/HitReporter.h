@@ -10,7 +10,7 @@
 #include "InteractionAlignment.h"
 #include "MatrixStore.h"
 #include "RunningMax.h"
-#include "cli.h"
+#include "cli/cli.h"
 #include "energy.hpp"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"

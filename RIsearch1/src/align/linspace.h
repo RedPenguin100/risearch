@@ -9,7 +9,7 @@
 #include "RunningMax.h"
 #include "align/optimization/QueryProfile.h"
 #include "align/ScoreTarget.h"
-#include "cli.h"
+#include "cli/cli.h"
 #include "energy.hpp"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"

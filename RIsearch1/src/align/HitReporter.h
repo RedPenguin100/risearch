@@ -112,6 +112,53 @@ public:
         }
     }
 
+    /* The same walk, over a run given as one bit per target position rather than
+       as scores.
+     *
+     * Almost no row of a run clears the threshold, and the batched sweep leaves
+     * its scores sixteen queries to a row, so reading a whole run to find the few
+     * that matter reads sixteen times what it needs. One bit per target position
+     * is a sixteenth of that, and a word of them none of which is set skips
+     * thirty-two rows at once.
+     *
+     * The threshold is already in the bits, so no score is compared again.
+     *
+     * Only for a vicinity of zero: a window takes the best of a reported row's
+     * neighbours, which reads the score of a row that cleared nothing.
+     */
+    template<typename Score>
+    void report_sweep_sparse(const std::uint32_t* clears, const Score* scores,
+                             const Score* positions, std::size_t stride,
+                             const RunningMax& running_max)
+    {
+        if (!(m_config.doSubopt && (m_config.filter_e || m_config.printShort > 1))) {
+            report(running_max.pos_i, running_max.pos_j, running_max.score, false);
+        }
+
+        if (m_config.doSubopt) {
+            const auto rows = static_cast<std::uint32_t>(m_n);
+            const auto words = (rows + 31) / 32;
+            for (auto w = words; w-- > 0;) {
+                auto bits = clears[w];
+                while (bits) {
+                    /* Highest row of the word first, as the dense walk descends. */
+                    const auto b = 31u - static_cast<unsigned>(__builtin_clz(bits));
+                    bits &= ~(1u << b);
+                    const auto j = w * 32 + b;
+                    if (j >= rows) {
+                        continue;
+                    }
+                    const auto at = static_cast<std::size_t>(j) * stride;
+                    report(positions[at], static_cast<int>(j) + 1, scores[at], true);
+                }
+            }
+        }
+
+        if (m_config.printShort == 3) {
+            write_line(FMT_COMPILE("{}\t{}\t{}\n"), m_qname, m_tname, m_hitcount);
+        }
+    }
+
     int hitcount() const
     {
         return m_hitcount;

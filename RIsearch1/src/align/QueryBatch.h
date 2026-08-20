@@ -62,6 +62,7 @@ public:
     void run(const ByteBuffer& target_seq, short (&dsm)[6][6][6][6], const char* tname,
              int target_count, std::uint32_t len_seq2, const config_st& config)
     {
+        m_exact_rows = config.doSubopt && config.vicinity > 0;
         const bool swept = sweep_impl(target_seq, dsm, config.min_score);
 
         for (auto k = 0u; k < m_count; k++) {
@@ -178,7 +179,11 @@ private:
         }
 
         run_sweep(target, n, first_score, first_pos);
-        deinterleave(n);
+        if (m_exact_rows) {
+            deinterleave(n);
+        } else {
+            build_clear_bits(n, threshold);
+        }
         m_n = n;
         return true;
 #else
@@ -284,6 +289,37 @@ private:
         return true;
     }
 
+    /* One bit per query per target position: does that query's row clear the
+       threshold? Held per query so a run is read at a sixteenth of what the
+       scores are, with the OR over each group of thirty-two rows beside it so a
+       group none of them clears is one test. */
+    __attribute__((target("avx2"))) void build_clear_bits(int n, int threshold)
+    {
+        const auto words = (static_cast<std::size_t>(n) + 31) / 32;
+        reserve_u32(m_clears, m_clears_capacity, words * kQueries);
+        for (auto k = 0u; k < words * kQueries; k++) {
+            m_clears[k] = 0;
+        }
+
+        const __m256i thr = _mm256_set1_epi16(static_cast<std::int16_t>(
+            threshold > SHRT_MAX ? SHRT_MAX : (threshold < SHRT_MIN ? SHRT_MIN : threshold)));
+
+        for (auto j = 0; j < n; j++) {
+            const __m256i v = v_vec_load(m_hs16.get() + static_cast<std::size_t>(j) * kQueries);
+            const __m256i gt = _mm256_cmpgt_epi16(v, thr);
+            /* Sixteen sign bits, one per query, out of a sixteen lane compare. */
+            auto bits = static_cast<unsigned>(_mm_movemask_epi8(
+                _mm_packs_epi16(_mm256_castsi256_si128(gt), _mm256_extracti128_si256(gt, 1))));
+            while (bits) {
+                const auto q = static_cast<unsigned>(__builtin_ctz(bits));
+                bits &= bits - 1;
+                const auto base = static_cast<std::size_t>(q) * words;
+                m_clears[base + j / 32] |= 1u << (j % 32);
+            }
+        }
+        m_clear_words = words;
+    }
+
     /* The sweep writes a target position's sixteen scores together; the
        reporting reads one query's whole run, so the two want opposite layouts. */
     __attribute__((target("avx2"))) void deinterleave(int n)
@@ -331,8 +367,18 @@ private:
         std::int16_t* const M[2] = {m_m_rows.get(), m_m_rows.get() + stride};
         std::int16_t* const Iy[2] = {m_iy_rows.get(), m_iy_rows.get() + stride};
 
-        score_target_batched(target, m_profile, M, Iy, m_scan1.get(), m_hs16.get(), m_hp16.get(),
-                             static_cast<std::size_t>(n), m_threshold, best);
+        /* A vicinity window takes the best of a reported row's neighbours, so
+           where one is asked for, every row's score is read and none can be left
+           standing as a bound. */
+        if (m_exact_rows) {
+            score_target_batched<false>(target, m_profile, M, Iy, m_scan1.get(), m_hs16.get(),
+                                        m_hp16.get(), static_cast<std::size_t>(n), m_threshold,
+                                        best);
+        } else {
+            score_target_batched<true>(target, m_profile, M, Iy, m_scan1.get(), m_hs16.get(),
+                                       m_hp16.get(), static_cast<std::size_t>(n), m_threshold,
+                                       best);
+        }
 
         v_vec_store(m_best_score, best.score);
         v_vec_store(m_best_i, best.pos_i);
@@ -358,9 +404,15 @@ private:
 
         HitReporter<std::int32_t> reporter(query, target, m_n, dsm, profile, config, e.name.data(),
                                            tname);
-        const auto offset = static_cast<std::size_t>(lane) * m_n;
-        reporter.report_sweep(m_hs.get() + offset, m_hp.get() + offset, config.min_score,
-                              running_max);
+        if (m_exact_rows) {
+            const auto offset = static_cast<std::size_t>(lane) * m_n;
+            reporter.report_sweep(m_hs.get() + offset, m_hp.get() + offset, config.min_score,
+                                  running_max);
+        } else {
+            reporter.report_sweep_sparse(m_clears.get() + lane * m_clear_words,
+                                         m_hs16.get() + lane, m_hp16.get() + lane, kQueries,
+                                         running_max);
+        }
     }
 
     static void reserve(MallocRAII<std::int16_t>& buffer, std::size_t& capacity,
@@ -370,6 +422,16 @@ private:
             return;
         }
         buffer.reset(static_cast<std::int16_t*>(malloc(wanted * sizeof(std::int16_t))));
+        capacity = wanted;
+    }
+
+    static void reserve_u32(MallocRAII<std::uint32_t>& buffer, std::size_t& capacity,
+                            std::size_t wanted)
+    {
+        if (wanted <= capacity) {
+            return;
+        }
+        buffer.reset(static_cast<std::uint32_t*>(malloc(wanted * sizeof(std::uint32_t))));
         capacity = wanted;
     }
 
@@ -389,6 +451,9 @@ private:
     MallocRAII<std::int16_t> m_m_rows, m_iy_rows, m_scan1, m_hs16, m_hp16;
     MallocRAII<std::int16_t> m_hs, m_hp;
     MallocRAII<int> m_row1;
+    MallocRAII<std::uint32_t> m_clears;
+    std::size_t m_clears_capacity = 0;
+    std::size_t m_clear_words = 0;
     std::size_t m_m_rows_capacity = 0, m_iy_rows_capacity = 0, m_scan1_capacity = 0;
     std::size_t m_hs16_capacity = 0, m_hp16_capacity = 0;
     std::size_t m_hs_capacity = 0, m_hp_capacity = 0, m_row1_capacity = 0;
@@ -397,4 +462,5 @@ private:
     int m_best_j[kQueries]{};
     int m_n = 0;
     int m_threshold = 0;
+    bool m_exact_rows = true;
 };

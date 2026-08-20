@@ -116,6 +116,9 @@ public:
             for (auto k = 0u; k < kSoloGroup; k++) {
                 base[k] = kDead;
             }
+            for (auto lane = 0u; lane < kLanes; lane++) {
+                m_close_max[t_cur * kLanes + lane] = kDead;
+            }
             for (auto i = 1u; i <= m; i++) {
                 std::int16_t* const group = base + i * kSoloGroup;
                 for (auto lane = 0u; lane < kLanes; lane++) {
@@ -138,7 +141,11 @@ public:
                     }
                     group[kMFromIx * kLanes + lane] = static_cast<std::int16_t>(from_ix);
                     group[kMOpen * kLanes + lane] = dsm[GAP][q_cur][GAP][t_cur];
-                    group[kClose * kLanes + lane] = dsm[q_cur][GAP][t_cur][GAP];
+                    const std::int16_t close = dsm[q_cur][GAP][t_cur][GAP];
+                    group[kClose * kLanes + lane] = close;
+                    if (close > m_close_max[t_cur * kLanes + lane]) {
+                        m_close_max[t_cur * kLanes + lane] = close;
+                    }
                     group[kIxFromMScan * kLanes + lane] = static_cast<std::int16_t>(
                         dsm[q_prev][q_cur][t_cur][GAP] - ix_prefix[i * kLanes + lane]);
                 }
@@ -210,6 +217,14 @@ public:
         return {m_pair_base[ctx], m_solo_base[t_cur], m_iy_extend[ctx]};
     }
 
+    /* The largest close a query can be terminated with, over its whole run of
+       columns. A row's scores are its columns' M plus their close, so this bounds
+       a row max from the row's largest M alone. */
+    const std::int16_t* close_max(unsigned t_cur) const
+    {
+        return m_close_max + t_cur * kLanes;
+    }
+
     /* ix_from_m_scan belongs to the row the bulge is in, which is the row above
        the one running the scan, so it is read at that row's target nucleotide. */
     const std::int16_t* scan_terms(unsigned t_cur) const
@@ -276,4 +291,5 @@ private:
     const std::int16_t* m_pair_base[kContexts]{};
     const std::int16_t* m_solo_base[DSM_SIDE]{};
     std::int16_t m_iy_extend[kContexts]{};
+    std::int16_t m_close_max[DSM_SIDE * kLanes]{};
 };

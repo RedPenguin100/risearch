@@ -35,6 +35,7 @@
 
 #include "FastaRAII.h"
 #include "FastaRecord.h"
+#include "align/QueryBatch.h"
 #include "align/dispatch.h"
 
 
@@ -99,6 +100,11 @@ int main(int argc, char* argv[])
                 }
                 FastaRecord query_record;
                 auto query_count = 0;
+
+                /* Queries are swept together where the sweep is what runs. */
+                QueryBatch batch;
+                const bool batching = QueryBatch::applies(config);
+
                 while (query_record.read(query_fasta.handle())) {
                     query_count++;
                     if (!seq2ix(query_record.get_size(), query_record.get_sequence(), query_seq_indices,
@@ -111,6 +117,16 @@ int main(int argc, char* argv[])
                         continue;
                     }
 
+                    if (batching) {
+                        batch.add(query_seq_indices, query_record.get_name(), query_count,
+                                  len_seq1);
+                        if (batch.full()) {
+                            batch.run(target_seq_indices, dsm, target_record.get_name(),
+                                      target_count, len_seq2, config);
+                        }
+                        continue;
+                    }
+
                     if (config.printShort < 2)
                         printf("\n\nquery %d: %s (%u nts) vs. target %d: %s (%u nts)\n\n",
                                query_count, query_record.get_name(), len_seq1, target_count,
@@ -118,6 +134,10 @@ int main(int argc, char* argv[])
 
                     run_alignment(query_seq_indices, target_seq_indices, dsm, query_record.get_name(),
                                   target_record.get_name(), config);
+                }
+                if (batching && !batch.empty()) {
+                    batch.run(target_seq_indices, dsm, target_record.get_name(), target_count,
+                              len_seq2, config);
                 }
             } else if (config.seq1_cli) {
                 /* query given as command line parameter */

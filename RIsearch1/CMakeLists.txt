@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(risearch1 LANGUAGES C CXX)
+project(risearch1 LANGUAGES CXX)
 
-set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -18,8 +17,7 @@ set(RISEARCH_MATPATH "${CMAKE_CURRENT_SOURCE_DIR}/../tables" CACHE STRING
 
 set(RISEARCH1_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Every source under src/, at any depth, so a new subdirectory needs no CMake change.
-file(GLOB_RECURSE RISEARCH1_SOURCES CONFIGURE_DEPENDS
-     ${RISEARCH1_SRC}/*.c ${RISEARCH1_SRC}/*.cpp)
+file(GLOB_RECURSE RISEARCH1_SOURCES CONFIGURE_DEPENDS ${RISEARCH1_SRC}/*.cpp)
 
 # Same for the include path: every directory that holds a header goes on it, so
 # "Matrix.h" and "math/Matrix.h" both resolve.
@@ -47,10 +45,12 @@ message(STATUS "RIsearch1: risearch-tauso version ${RISEARCH_TAUSO_VERSION}")
 
 set(RISEARCH1_DEFINES MATPATH="${RISEARCH_MATPATH}" RISVERSION=1
     RISEARCH_TAUSO_VERSION="${RISEARCH_TAUSO_VERSION}")
-# -fpermissive downgrades the void*-to-T* conversions that C allows implicitly and
-# C++ does not. It is scaffolding for the C-to-C++ move: each malloc site wants a
-# static_cast, and this comes back out once they all have one.
-set(RISEARCH1_WARNINGS -Wall -Wextra -Wdouble-promotion -Wnon-virtual-dtor -Wduplicated-branches -Wduplicated-cond -pedantic -fpermissive -fvisibility-inlines-hidden -fvisibility=hidden)
+
+set(RISEARCH1_WARNINGS -Wall -Wextra -pedantic
+    -Wdouble-promotion -Wcast-qual -Wextra-semi -Wcast-align -Wzero-as-null-pointer-constant
+    -Wpointer-arith -Wnon-virtual-dtor -Wduplicated-branches -Wduplicated-cond
+    -Woverloaded-virtual -Wlogical-op -Wnull-dereference -Wformat=2
+    -fvisibility-inlines-hidden -fvisibility=hidden)
 
 # Split by where the flag belongs: -ffunction-sections/-fdata-sections put every
 # function and object in its own section at compile time, and --gc-sections drops

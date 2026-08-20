@@ -84,86 +84,86 @@ std::uint32_t parse_length_arg(const char* text, char option)
 }
 
 /*TODO possibly several print styles, Vienna-like (one line, but still IA) */
-void getArgs(int argc, char* argv[], config_st* config)
+void getArgs(int argc, char* argv[], config_st& config)
 {
-    config->transpose_matrix_flag = 0;
-    config->extension_penalty = 0; /* extension penalty; used to compute dsm */
-    config->seq1_file_name = nullptr;
-    config->seq2_file_name = nullptr;
-    config->seq1_cli = nullptr;
-    config->seq2_cli = nullptr;
-    config->all_vs_all = 1; /* run all queries vs all targets */
-    config->mat_name = DEFAULT_MAT_NAME;
-    config->min_score = INT_MAX; /* score cutoff; if not set, only print best */
-    config->doSubopt = 0;        /* flag : minScore in use */
-    config->max_energy =
+    config.transpose_matrix_flag = 0;
+    config.extension_penalty = 0; /* extension penalty; used to compute dsm */
+    config.seq1_file_name = nullptr;
+    config.seq2_file_name = nullptr;
+    config.seq1_cli = nullptr;
+    config.seq2_cli = nullptr;
+    config.all_vs_all = 1; /* run all queries vs all targets */
+    config.mat_name = DEFAULT_MAT_NAME;
+    config.min_score = INT_MAX; /* score cutoff; if not set, only print best */
+    config.doSubopt = 0;        /* flag : minScore in use */
+    config.max_energy =
         INT_MAX;          /*energy cutoff, not even print 'best' if it's not lower than that! */
-    config->filter_e = 0; /* flag : filterE in use */
-    config->weighted_positions = 0; /*true if each position of interaction has a certain weight. */
-    config->pos_weights =
+    config.filter_e = 0; /* flag : filterE in use */
+    config.weighted_positions = 0; /*true if each position of interaction has a certain weight. */
+    config.pos_weights =
         DEFAULT_POS_WEIGHTS; /*name of the array being used to assign weights to positions */
-    config->vicinity = 0;    /* to omit neighboring hits (subalignments) */
-    config->printShort = 0;  /* switch p to print 1 line per IA, only pos&E, not IA itself */
-    config->force_start_val = -1;
+    config.vicinity = 0;    /* to omit neighboring hits (subalignments) */
+    config.printShort = 0;  /* switch p to print 1 line per IA, only pos&E, not IA itself */
+    config.force_start_val = -1;
     /* values used to unitialize the first column of the M matrix. If sufficiently high, can force
      * the interaction to start at position 0 of the DNA. */
-    config->tblen = 40; /* trace-back length, that many nucleotides before 'maxHit' */
+    config.tblen = 40; /* trace-back length, that many nucleotides before 'maxHit' */
 
     char c;
     while ((c = getopt(argc, argv, "1q:t:Q:T:d:X:m:s:e:n:w:l:f:p:R::")) != -1)
         switch (c) {
         case '1':
-            config->all_vs_all = 0;
+            config.all_vs_all = 0;
             break;
         case 'q':
-            config->seq1_file_name = optarg;
+            config.seq1_file_name = optarg;
             break;
         case 'R':
-            config->transpose_matrix_flag = 1;
+            config.transpose_matrix_flag = 1;
             break;
         case 't':
-            config->seq2_file_name = optarg;
+            config.seq2_file_name = optarg;
             break;
         case 'Q':
-            config->seq1_cli = optarg;
+            config.seq1_cli = optarg;
             break;
         case 'T':
-            config->seq2_cli = optarg;
+            config.seq2_cli = optarg;
             break;
         case 'd':
-            config->extension_penalty = atoi(optarg);
+            config.extension_penalty = atoi(optarg);
             break;
         case 'X':
             break; /*silent var */
         case 'm':
-            config->mat_name = optarg;
+            config.mat_name = optarg;
             break;
         case 's':
-            config->min_score = atoi(optarg);
-            config->doSubopt = 1;
+            config.min_score = atoi(optarg);
+            config.doSubopt = 1;
             break;
         case 'e':
-            config->max_energy = atof(optarg);
-            config->filter_e = 1;
+            config.max_energy = atof(optarg);
+            config.filter_e = 1;
             break;
         case 'n':
-            config->vicinity = atoi(optarg);
+            config.vicinity = atoi(optarg);
             break;
         case 'w':
-            config->weighted_positions = 1;
-            config->pos_weights = optarg;
+            config.weighted_positions = 1;
+            config.pos_weights = optarg;
             break;
         case 'l':
-            config->tblen = parse_length_arg(optarg, 'l');
+            config.tblen = parse_length_arg(optarg, 'l');
             break;
         case 'f':
-            config->force_start_val = atoi(optarg);
+            config.force_start_val = atoi(optarg);
             break;
         case 'p':
             if (optarg)
-                config->printShort = atoi(optarg);
+                config.printShort = atoi(optarg);
             else
-                config->printShort = 1;
+                config.printShort = 1;
             break;
         case '?':
             usage(argv[0]);
@@ -172,13 +172,13 @@ void getArgs(int argc, char* argv[], config_st* config)
             abort();
         }
 
-    if (!((config->seq1_file_name || config->seq1_cli) &&
-          (config->seq2_file_name || config->seq2_cli))) {
+    if (!((config.seq1_file_name || config.seq1_cli) &&
+          (config.seq2_file_name || config.seq2_cli))) {
         fprintf(stderr,
                 "\nYou need to provide a query (see -Q or -q option) and a target (-T/-t)\n\n");
         usage(argv[0]);
     }
-    if (config->seq1_file_name && (!strcmp(config->seq1_file_name, "-"))) {
+    if (config.seq1_file_name && (!strcmp(config.seq1_file_name, "-"))) {
         fprintf(stderr, "\nQuery can currently not be read from STDIN, only target can!\n\n");
         usage(argv[0]);
     }

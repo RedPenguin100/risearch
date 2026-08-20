@@ -73,7 +73,8 @@ static void emit_target_bulge(IA* hit, int l, ReversedSequence t, int j)
  */
 template<typename int_type>
 static RunningMax transpose_best_cell(ReversedSequence target_seq, int m, int n, int_type** M,
-                                      const QueryProfile<int_type>& profile, int q_offset, const int_type* best,
+                                      const QueryProfile<int_type>& profile, int q_offset,
+                                      const int_type* best,
                                       const RunningVectorMax& first_row)
 {
     RunningVectorMax inverted_best{};
@@ -107,7 +108,8 @@ static RunningMax transpose_best_cell(ReversedSequence target_seq, int m, int n,
  */
 template<typename int_type>
 static void ris_fill_scalar(ReversedSequence target_seq, int m, int n, int_type** M, int_type** Ix,
-                            int_type** Iy, const QueryProfile<int_type>& profile, int q_offset, int_type* best,
+                            int_type** Iy, const QueryProfile<int_type>& profile, int q_offset,
+                            int_type* best,
                             RunningVectorMax& first_row)
 {
     const int_type* const ix_ext = profile.ix_extend();
@@ -151,7 +153,8 @@ static void ris_fill_scalar(ReversedSequence target_seq, int m, int n, int_type*
     const auto qp_first = q_offset + 1;
 
     for (auto j = 2; j <= n; j++) {
-        const auto t = profile.row(QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]));
+        const auto t =
+            profile.row(QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]));
         const auto iy_ext = t.iy_extend;
 
         M[j][1] = t.m_open[qp_first];
@@ -255,7 +258,8 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
     const __m256i zero = _mm256_setzero_si256();
 
     for (auto j = 2; j <= n; j++) {
-        const auto t = profile.row(QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]));
+        const auto t =
+            profile.row(QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]));
         const auto iy_ext = t.iy_extend;
 
         const int_type* const m_prev = M[j - 1];
@@ -307,14 +311,17 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
                 v_vec_load<int_type>(open + i));
             v_vec_store<int_type>(m_cur + i, m_new);
 
-            v_vec_store<int_type>(best + i, v_max<int_type>(v_vec_load<int_type>(best + i), v_add<int_type>(m_new, v_vec_load<int_type>(close + i))));
+            v_vec_store<int_type>(
+                best + i, v_max<int_type>(v_vec_load<int_type>(best + i),
+                                          v_add<int_type>(m_new, v_vec_load<int_type>(close + i))));
 
             /* Iy's predecessors are vertical: previous target position, same
                column, so no -1 on the address. */
             v_vec_store<int_type>(iy_cur + i,
                       v_max3<int_type>(
                           // Open a bulge in target
-                          v_add<int_type>(v_vec_load<int_type>(m_prev + i), v_vec_load<int_type>(iy_from_m + i)),
+                          v_add<int_type>(v_vec_load<int_type>(m_prev + i),
+                                          v_vec_load<int_type>(iy_from_m + i)),
                           // Continue a bulge in target
                           v_add<int_type>(v_vec_load<int_type>(iy_prev + i), v_iy_ext),
                           zero));
@@ -329,7 +336,8 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
             const __m256i prefix = v_vec_load<int_type>(ix_pref + i);
             const __m256i candidates =
                 v_max<int_type>(// Open a bulge in query
-                     v_add<int_type>(v_vec_load<int_type>(m_cur + i - 1), v_vec_load<int_type>(ix_scan + i)),
+                     v_add<int_type>(v_vec_load<int_type>(m_cur + i - 1),
+                                     v_vec_load<int_type>(ix_scan + i)),
                      // or hold nothing yet, which is this column's 0
                      v_sub<int_type>(zero, prefix));
             const __m256i winner = v_max<int_type>(v_prefix_max<int_type>(candidates), carry);
@@ -347,10 +355,11 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
             const auto back = m - (kBlock - 1);
             const __m256i prefix = v_vec_load<int_type>(ix_pref + back);
             const __m256i candidates =
-                v_max<int_type>(v_add<int_type>(v_vec_load<int_type>(m_cur + back - 1), v_vec_load<int_type>(ix_scan + back)),
+                v_max<int_type>(v_add<int_type>(v_vec_load<int_type>(m_cur + back - 1),
+                                               v_vec_load<int_type>(ix_scan + back)),
                      v_sub<int_type>(zero, prefix));
             const __m256i winner = v_max<int_type>(v_prefix_max<int_type>(candidates),
-                                        v_int_to_avx2<int_type>(ix_cur[back - 1] - ix_pref[back - 1]));
+                                v_int_to_avx2<int_type>(ix_cur[back - 1] - ix_pref[back - 1]));
             v_vec_store<int_type>(ix_cur + back, v_add<int_type>(winner, prefix));
         }
     }
@@ -374,7 +383,8 @@ static bool ris_fill_is_vectorized(int m, const QueryProfile<int_type>& profile)
 }
 
 template<typename int_type>
-static void ris_fill(ReversedSequence target_seq, int m, int n, int_type** M, int_type** Ix, int_type** Iy,
+static void ris_fill(ReversedSequence target_seq, int m, int n, int_type** M, int_type** Ix,
+                     int_type** Iy,
                      const QueryProfile<int_type>& profile, int q_offset, int_type* best,
                      RunningVectorMax& first_row)
 {
@@ -393,7 +403,8 @@ static void RIs(const unsigned char* query_seq,  /* query sequence - numeric rep
                 int m,                           /* query seq length */
                 int n,                           /* target seq length */
                 IA* hit,                         /* pointer to struct, fill results */
-                const config_st& config, int_type** M, int_type** Ix, int_type** Iy, const QueryProfile<int_type>& profile,
+                const config_st& config, int_type** M, int_type** Ix, int_type** Iy,
+                const QueryProfile<int_type>& profile,
                 int q_offset,
                 int_type* best // We use `best` parameter to preserve output order of old C version
                 )
@@ -442,7 +453,8 @@ static void RIs(const unsigned char* query_seq,  /* query sequence - numeric rep
                 k = TraceState::TRACE_DONE;
             } else {
                 const auto& t =
-                    profile.row(QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]));
+                    profile.row(
+                        QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]));
 
                 if (M[j][i] == M[j - 1][i - 1] + t.m_from_m[qp]) {
                     k = TraceState::TRACE_M;
@@ -461,12 +473,14 @@ static void RIs(const unsigned char* query_seq,  /* query sequence - numeric rep
             // in this case, t_prev doesn't matter so we put it as GAP
             // avoids bugs in the j == 1 case.
             /* seq1(query) paired to a gap (in target) */
-            const auto gap_row = profile.row(QueryProfile<int_type>::context(GAP, target_seq[j - 1]));
+            const auto gap_row =
+                profile.row(QueryProfile<int_type>::context(GAP, target_seq[j - 1]));
             if (Ix[j][i] == M[j][i - 1] + gap_row.ix_from_m[qp]) {
                 k = TraceState::TRACE_M; /* open a new gap coming from match */
             } else if (Ix[j][i] == Ix[j][i - 1] + ix_ext[qp]) {
                 k = TraceState::TRACE_IX; /* extend existing gap */
-            } else if (Ix[j][i] == profile.row(QueryProfile<int_type>::context(GAP, GAP)).m_open[qp]) {
+            } else if (Ix[j][i] ==
+                       profile.row(QueryProfile<int_type>::context(GAP, GAP)).m_open[qp]) {
                 fprintf(stderr, "\nErr: This alignment starts in a gap - not even an option!?\n");
                 k = TraceState::TRACE_DONE; /* start new alignment with gap; not possible, prevented
                                                by scoring... */
@@ -477,7 +491,8 @@ static void RIs(const unsigned char* query_seq,  /* query sequence - numeric rep
             break;
         }
         case TraceState::TRACE_IY: {
-            const auto context = QueryProfile<int_type>::context(target_seq[j - 2], target_seq[j - 1]);
+            const auto context = QueryProfile<int_type>::context(target_seq[j - 2],
+                                                                 target_seq[j - 1]);
 
             /* seq2(target) paired to a gap (in query) */
             if (Iy[j][i] == M[j - 1][i] + profile.row(context).iy_from_m[qp]) {
@@ -485,7 +500,8 @@ static void RIs(const unsigned char* query_seq,  /* query sequence - numeric rep
             } else if (Iy[j][i] == Iy[j - 1][i] + profile.row(context).iy_extend) {
                 k = TraceState::TRACE_IY; /* extend existing gap */
             } else if (Iy[j][i] ==
-                       profile.row(QueryProfile<int_type>::context(GAP, target_seq[j - 1])).iy_extend) {
+                       profile.row(QueryProfile<int_type>::context(GAP, target_seq[j - 1]))
+                           .iy_extend) {
                 k = TraceState::TRACE_DONE;
                 fprintf(stderr, "\nErr: This alignment starts in a gap - not even an option!?\n");
             } else {

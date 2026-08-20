@@ -57,13 +57,15 @@ __attribute__((target("avx2"), always_inline)) inline __m256i v_sub(__m256i a, _
 template<typename int_type>
 __attribute__((target("avx2"), always_inline)) inline __m256i v_max(__m256i a, __m256i b);
 template<typename int_type>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_add_unless_zero_or_neg1(__m256i base, __m256i term);
+__attribute__((target("avx2"), always_inline)) inline __m256i
+v_add_unless_zero_or_neg1(__m256i base, __m256i term);
 template<typename int_type>
 __attribute__((target("avx2"), always_inline)) inline int_type v_hmax(__m256i v);
 template<typename int_type>
 __attribute__((target("avx2"), always_inline)) inline __m256i v_prefix_max(__m256i v);
 template<typename int_type>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_shifted_left_one(__m256i prev, __m256i cur);
+__attribute__((target("avx2"), always_inline)) inline __m256i v_shifted_left_one(__m256i prev,
+                                                                                 __m256i cur);
 template<typename int_type>
 __attribute__((target("avx2"), always_inline)) inline __m256i v_broadcast_last(__m256i v);
 
@@ -88,7 +90,8 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i v_vec_load(
 }
 
 template<typename int_type>
-__attribute__((target("avx2"), always_inline)) static inline void v_vec_store(int_type* p, __m256i v)
+__attribute__((target("avx2"), always_inline)) static inline void v_vec_store(int_type* p,
+                                                                              __m256i v)
 {
     _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v);
 }
@@ -96,22 +99,23 @@ __attribute__((target("avx2"), always_inline)) static inline void v_vec_store(in
 /* The scalar operations of the recurrence, eight lanes at a time. vmax4 mirrors
    max4, and add_unless_zero_or_neg1 is the `x != 0 ? x + term : -1` test -- no
    lane can branch, so both arms are computed and one is selected per lane. */
-/* int32 stays inside its range for any score the bound allows, so a plain add
-   serves. int16 saturates instead, which is what keeps a sentinel a sentinel. */
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_add<std::int32_t>(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_add<std::int32_t>(__m256i a,
+                                                                                  __m256i b)
 {
     return _mm256_add_epi32(a, b);
 }
 
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_sub<std::int32_t>(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_sub<std::int32_t>(__m256i a,
+                                                                                  __m256i b)
 {
     return _mm256_sub_epi32(a, b);
 }
 
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_max<std::int32_t>(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_max<std::int32_t>(__m256i a,
+                                                                                  __m256i b)
 {
     return _mm256_max_epi32(a, b);
 }
@@ -167,9 +171,12 @@ __attribute__((target("avx2"), always_inline)) inline __m256i v_prefix_max<std::
     const __m256i down2 = _mm256_setr_epi32(0, 0, 0, 1, 2, 3, 4, 5);
     const __m256i down4 = _mm256_setr_epi32(0, 0, 0, 0, 0, 1, 2, 3);
 
-    v = v_max<std::int32_t>(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
-    v = v_max<std::int32_t>(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
-    return v_max<std::int32_t>(v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
+    v = v_max<std::int32_t>(v,
+                            _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down1), none, 0x01));
+    v = v_max<std::int32_t>(v,
+                            _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down2), none, 0x03));
+    return v_max<std::int32_t>(
+        v, _mm256_blend_epi32(_mm256_permutevar8x32_epi32(v, down4), none, 0x0f));
 }
 
 /* The block's eight columns of M moved one column to the right, so that lane k
@@ -186,7 +193,8 @@ v_shifted_left_one<std::int32_t>(__m256i prev, __m256i cur)
 
 /* The top lane broadcast, which is the carry the next block starts from. */
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_broadcast_last<std::int32_t>(__m256i v)
+__attribute__((target("avx2"), always_inline)) inline __m256i
+v_broadcast_last<std::int32_t>(__m256i v)
 {
     return _mm256_permutevar8x32_epi32(v, _mm256_set1_epi32(v_lanes<std::int32_t>() - 1));
 }
@@ -196,29 +204,31 @@ __attribute__((target("avx2"), always_inline)) inline __m256i v_broadcast_last<s
    differs is the instruction, and the two shuffles AVX2 has no 16-bit form of. */
 
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_int_to_avx2<std::int16_t>(std::int16_t v)
+__attribute__((target("avx2"), always_inline)) inline __m256i
+v_int_to_avx2<std::int16_t>(std::int16_t v)
 {
     return _mm256_set1_epi16(v);
 }
 
-/* Saturating, not wrapping: a sentinel plus a negative term must stay at the
-   bottom of the range rather than wrap round to the top and win everything. On a
-   real value the two agree, because int16_bound keeps every value clear of the
-   ends. */
+/* adds instead of add, to saturate negative sums at NEG_INF_SHORT rather than
+   wrap around. */
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_add<std::int16_t>(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_add<std::int16_t>(__m256i a,
+                                                                                  __m256i b)
 {
     return _mm256_adds_epi16(a, b);
 }
 
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_sub<std::int16_t>(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_sub<std::int16_t>(__m256i a,
+                                                                                  __m256i b)
 {
     return _mm256_subs_epi16(a, b);
 }
 
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_max<std::int16_t>(__m256i a, __m256i b)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_max<std::int16_t>(__m256i a,
+                                                                                  __m256i b)
 {
     return _mm256_max_epi16(a, b);
 }
@@ -259,7 +269,7 @@ __attribute__((target("avx2"), always_inline)) inline __m256i v_prefix_max<std::
     const __m128i low_last = _mm_shuffle_epi8(
         low, _mm_setr_epi8(14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15));
     /* The low half must be left alone, so what it is maxed against is the
-       sentinel rather than zero -- zero would raise every negative prefix. */
+       magic value rather than zero -- zero would raise every negative prefix. */
     const __m256i carry = _mm256_inserti128_si256(none, low_last, 1);
     return _mm256_max_epi16(v, carry);
 }
@@ -272,7 +282,8 @@ v_shifted_left_one<std::int16_t>(__m256i prev, __m256i cur)
 }
 
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_broadcast_last<std::int16_t>(__m256i v)
+__attribute__((target("avx2"), always_inline)) inline __m256i
+v_broadcast_last<std::int16_t>(__m256i v)
 {
     const __m128i high = _mm256_extracti128_si256(v, 1);
     const __m128i last = _mm_shuffle_epi8(

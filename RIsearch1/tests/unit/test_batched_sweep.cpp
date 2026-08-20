@@ -78,8 +78,9 @@ struct SingleSweep {
             const auto q_cur = q[i - 1];
             M[1][i] = dsm[GAP][q_cur][GAP][t_last];
             first_row.set_if_better(M[1][i] + dsm[q_cur][GAP][t_last][GAP], static_cast<int>(i));
-            Ix[1][i] = max3(0, M[1][i - 1] != 0 ? M[1][i - 1] + dsm[q_prev][q_cur][t_last][GAP] : -1,
-                            Ix[1][i - 1] != 0 ? Ix[1][i - 1] + dsm[q_prev][q_cur][GAP][GAP] : -1);
+            Ix[1][i] =
+                max3(0, M[1][i - 1] != 0 ? M[1][i - 1] + dsm[q_prev][q_cur][t_last][GAP] : -1,
+                     Ix[1][i - 1] != 0 ? Ix[1][i - 1] + dsm[q_prev][q_cur][GAP][GAP] : -1);
             Iy[1][i] = NEGINF;
         }
 

@@ -6,6 +6,7 @@ BasedOnStyle: LLVM
 IndentWidth: 4
 ColumnLimit: 100
 PointerAlignment: Left
+DerivePointerAlignment: false
 ReferenceAlignment: Pointer
 AccessModifierOffset: -4
 

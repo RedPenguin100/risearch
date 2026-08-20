@@ -1,13 +1,29 @@
-#pragma once
-
-#include <cstdio>
-#include <cstring>
-#include <unistd.h>
+#include "cli/cli.h"
 
 #include <getopt.h>
-#include <climits>
 
-static void usage(const char* progname)
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+
+static const char* DEFAULT_MAT_NAME = "t04";
+static const char* DEFAULT_POS_WEIGHTS = "CRISPR_20nt_3p_5p";
+
+
+std::uint32_t parse_length_arg(const char* text, char option)
+{
+    const auto value = atoi(text);
+    if (value < 0) {
+        fprintf(stderr, "\nOption -%c takes a length of zero or more, got '%s'.\n\n", option, text);
+        exit(1);
+    }
+    return static_cast<std::uint32_t>(value);
+}
+
+
+[[noreturn]] void usage(const char* progname)
 {
     /* This is the fork, not upstream: the search core has been rewritten and
        some results differ. Report our own version -- which CMake reads from
@@ -67,34 +83,8 @@ static void usage(const char* progname)
     exit(1);
 }
 
-/* values to be overwritten by command line parameters */
-typedef struct config {
-    int transpose_matrix_flag;
-    short extension_penalty;
-    int all_vs_all;
-    const char* seq1_file_name;
-    const char* seq2_file_name;
-    const char* seq1_cli;
-    const char* seq2_cli;
-    const char* mat_name;
-    const char* pos_weights;
-    int min_score;
-    int doSubopt;
-    double max_energy;
-    int filter_e;
-    int weighted_positions;
-    int vicinity;
-    char printShort;
-    int force_start_val;
-    int tblen;
-} config_st;
-
-static const char* DEFAULT_MAT_NAME = "t04";
-static const char* DEFAULT_POS_WEIGHTS = "CRISPR_20nt_3p_5p";
-
 /*TODO possibly several print styles, Vienna-like (one line, but still IA) */
-
-static void getArgs(int argc, char* argv[], config_st* config)
+void getArgs(int argc, char* argv[], config_st* config)
 {
     config->transpose_matrix_flag = 0;
     config->extension_penalty = 0; /* extension penalty; used to compute dsm */
@@ -164,7 +154,7 @@ static void getArgs(int argc, char* argv[], config_st* config)
             config->pos_weights = optarg;
             break;
         case 'l':
-            config->tblen = atoi(optarg);
+            config->tblen = parse_length_arg(optarg, 'l');
             break;
         case 'f':
             config->force_start_val = atoi(optarg);
@@ -194,13 +184,7 @@ static void getArgs(int argc, char* argv[], config_st* config)
     }
 }
 
-
-static bool uses_force_start(const config_st& config)
-{
-    return config.weighted_positions || config.force_start_val >= 0;
-}
-
-static void validate_force_start_config(const config_st& config)
+void validate_force_start_config(const config_st& config)
 {
     if (config.force_start_val < 0) {
         fprintf(stderr, "Parameter -f must be set when using weights (-w).\n");

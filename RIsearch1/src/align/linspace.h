@@ -9,7 +9,7 @@
 #include "RunningMax.h"
 #include "align/optimization/QueryProfile.h"
 #include "align/ScoreTarget.h"
-#include "cli.h"
+#include "cli/cli.h"
 #include "energy.hpp"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"
@@ -34,8 +34,8 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
              const char* tname,                    /* target name */
              const config_st& config)
 {
-    const auto m = static_cast<short>(query_sequence_ix.size());
-    const auto n = static_cast<int>(target_sequence_ix.size());
+    const auto m = query_sequence_ix.size();
+    const auto n = target_sequence_ix.size();
     const auto* target_sequence = target_sequence_ix.unsigned_data();
     const auto* query_sequence = query_sequence_ix.unsigned_data();
 

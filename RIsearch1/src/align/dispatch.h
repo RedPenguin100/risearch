@@ -5,7 +5,7 @@
 #include "align/force_start.h"
 #include "align/int16_safety.h"
 #include "align/linspace.h"
-#include "cli.h"
+#include "cli/cli.h"
 #include "memory/ByteBuffer.hpp"
 
 static void run_alignment(const ByteBuffer& query_seq, const ByteBuffer& target_seq,

@@ -6,7 +6,7 @@
 
 #include "InteractionAlignment.h"
 #include "RunningMax.h"
-#include "cli.h"
+#include "cli/cli.h"
 #include "int16_safety.h"
 #include "nucleotide.h" /* GAP, neg_inf<int_type>() */
 #include "operations.h"

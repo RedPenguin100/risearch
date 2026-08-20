@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "cli.h"
+#include "cli/cli.h"
 #include "dsm.h"
 #include "align/linspace.h"
 #include "memory/ByteBuffer.hpp"

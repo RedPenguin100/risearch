@@ -23,7 +23,7 @@ static int_type** allocMatrix(std::uint32_t rows, std::uint32_t cols)
     return m;
 }
 
-static float** allocFloatMatrix(std::uint32_t rows, std::uint32_t cols)
+inline float** allocFloatMatrix(std::uint32_t rows, std::uint32_t cols)
 {
     const auto pointer_bytes = static_cast<std::size_t>(rows) * sizeof(float*);
     const auto data_bytes = static_cast<std::size_t>(rows) * cols * sizeof(float);
@@ -47,7 +47,7 @@ static void freeMatrix(int_type** m, std::uint32_t)
     free(m);
 }
 
-static void freeFloatMatrix(float** m, std::uint32_t)
+inline void freeFloatMatrix(float** m, std::uint32_t)
 {
     free(m);
 }

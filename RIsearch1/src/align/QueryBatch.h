@@ -8,7 +8,7 @@
 #include "align/dispatch.h"
 #include "align/int16_safety.h"
 #include "align/optimization/BatchedQueryProfile.h"
-#include "cli.h"
+#include "cli/cli.h"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"
 
@@ -331,8 +331,8 @@ private:
         std::int16_t* const M[2] = {m_m_rows.get(), m_m_rows.get() + stride};
         std::int16_t* const Iy[2] = {m_iy_rows.get(), m_iy_rows.get() + stride};
 
-        score_target_batched(target, m_profile, M, Iy, m_scan1.get(), m_hs16.get(), m_hp16.get(), n,
-                             m_threshold, best);
+        score_target_batched(target, m_profile, M, Iy, m_scan1.get(), m_hs16.get(), m_hp16.get(),
+                             static_cast<std::size_t>(n), m_threshold, best);
 
         v_vec_store(m_best_score, best.score);
         v_vec_store(m_best_i, best.pos_i);

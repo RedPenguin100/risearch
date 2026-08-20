@@ -31,7 +31,7 @@
 
 #include "nucleotide.h"
 #include "dsm.h"
-#include "cli.h"
+#include "cli/cli.h"
 
 #include "FastaRAII.h"
 #include "FastaRecord.h"

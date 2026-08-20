@@ -158,7 +158,8 @@ __attribute__((target("avx2"))) static void
 score_target_batched(const unsigned char* target_sequence, const BatchedQueryProfile& profile,
                      std::int16_t* const* M, std::int16_t* const* Iy,
                      const std::int16_t* ix_from_m_scan_row1, std::int16_t* hs16,
-                     std::int16_t* hp16, int n, int threshold, BatchedRunningMax& running_max)
+                     std::int16_t* hp16, std::size_t n, int threshold,
+                     BatchedRunningMax& running_max)
 {
     const auto m = profile.m();
     constexpr auto queries = BatchedQueryProfile::kLanes;
@@ -170,7 +171,6 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
     std::int16_t* iy_last = Iy[1];
 
     const __m256i zero = _mm256_setzero_si256();
-    const __m256i minus_one = _mm256_set1_epi16(-1);
     const __m256i one = _mm256_set1_epi16(1);
 
     /* A row's position only has to be right where it is read, which is where the

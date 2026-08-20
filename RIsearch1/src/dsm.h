@@ -32,7 +32,7 @@ static constexpr NamedMatrix DSM_MATRICES[]{
     {"slh04_noGU", &dsm_slh04_woGU_pos[0][0][0][0], "DNA-DNA"},
 };
 
-static const short* find_dsm(const char* matname)
+inline const short* find_dsm(const char* matname)
 {
     for (const auto& matrix : DSM_MATRICES) {
         if (!strcmp(matname, matrix.name)) {
@@ -42,7 +42,7 @@ static const short* find_dsm(const char* matname)
     return nullptr;
 }
 
-static void getMat(const char* matname, short* dsm, short extension_penalty, int transpose)
+inline void getMat(const char* matname, short* dsm, short extension_penalty, int transpose)
 {
     const short* base = find_dsm(matname);
     if (!base) {
@@ -80,7 +80,7 @@ static void getMat(const char* matname, short* dsm, short extension_penalty, int
 /* Whether any entry that opens or extends a bulge is positive, which means the
    alignment is paid to open bulges. A property of the matrix and of the
    extension penalty applied to it, not of any query. */
-static bool has_positive_gap(const short dsm[6][6][6][6])
+inline bool has_positive_gap(const short dsm[6][6][6][6])
 {
     for (auto q_prev = 0u; q_prev < DSM_SIDE; q_prev++) {
         for (auto q_cur = 0u; q_cur < DSM_SIDE; q_cur++) {

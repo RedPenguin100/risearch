@@ -33,9 +33,8 @@
 template<typename int_type>
 __attribute__((always_inline)) static inline void
 score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
-                    int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs,
-                    int* hp, int n,
-                    int threshold, RunningMax& running_max)
+                    int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
+                    std::size_t n, int threshold, RunningMax& running_max)
 {
     const auto m = profile.query_length();
 
@@ -229,7 +228,7 @@ template<typename int_type>
 __attribute__((target("avx2"))) static void
 score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
                   int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
-                  int n, int threshold, RunningMax& running_max)
+                  std::size_t n, int threshold, RunningMax& running_max)
 {
     const auto m = profile.query_length();
 
@@ -332,9 +331,8 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
 template<typename int_type>
 __attribute__((always_inline)) static inline void
 score_target(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
-             int_type* const* M,
-             int_type* const* Ix, int_type* const* Iy, int* hs, int* hp, int n, int threshold,
-             RunningMax& running_max)
+             int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
+             std::size_t n, int threshold, RunningMax& running_max)
 {
 #if RISEARCH1_HAS_AVX2
     // No upside from using AVX2 for small target sizes

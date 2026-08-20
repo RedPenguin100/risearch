@@ -18,25 +18,27 @@
  * position. A pass that reads one term walks it without pulling the other six
  * through the cache, and several query positions of one term sit adjacent,
  * which is what a wide load needs. */
+template<typename int_type>
 class QueryProfile {
 public:
     /* One row's terms. The context is resolved once and a query position then
        indexes each run directly: t.m_from_m[i] is the term for column i. */
     struct RowView {
-        const int* m_from_m;  /* dsm[q_prev][q_cur][t_prev][t_cur] -- extend a pair        */
-        const int* m_from_ix; /* dsm[q_prev][q_cur][GAP][t_cur]    -- close a query bulge  */
-        const int* m_from_iy; /* dsm[GAP][q_cur][t_prev][t_cur]    -- close a target bulge */
-        const int* m_open;    /* dsm[GAP][q_cur][GAP][t_cur]       -- open on this pair    */
-        const int* close;     /* dsm[q_cur][GAP][t_cur][GAP]       -- terminate after it   */
-        const int* iy_from_m; /* dsm[q_cur][GAP][t_prev][t_cur]    -- open a target bulge  */
-        const int* ix_from_m; /* dsm[q_prev][q_cur][t_cur][GAP]    -- open a query bulge   */
-        const int* ix_extend; /* dsm[q_prev][q_cur][GAP][GAP]      -- by query position    */
+        const int_type* m_from_m;  /* dsm[q_prev][q_cur][t_prev][t_cur] -- extend a pair        */
+        const int_type* m_from_ix; /* dsm[q_prev][q_cur][GAP][t_cur]    -- close a query bulge  */
+        const int_type* m_from_iy; /* dsm[GAP][q_cur][t_prev][t_cur]    -- close a target bulge */
+        const int_type* m_open;    /* dsm[GAP][q_cur][GAP][t_cur]       -- open on this pair    */
+        const int_type* close;     /* dsm[q_cur][GAP][t_cur][GAP]       -- terminate after it   */
+        const int_type* iy_from_m; /* dsm[q_cur][GAP][t_prev][t_cur]    -- open a target bulge  */
+        const int_type* ix_from_m; /* dsm[q_prev][q_cur][t_cur][GAP]    -- open a query bulge   */
+        const int_type* ix_extend; /* dsm[q_prev][q_cur][GAP][GAP]      -- by query position    */
         /* ix_from_m with ix_prefix taken out, and the running total to put it
            back -- see the constructor. */
-        const int* ix_from_m_scan;
-        const int* ix_prefix; /* by query position only */
-        int iy_extend;        /* dsm[GAP][GAP][t_prev][t_cur]      -- one value per row    */
+        const int_type* ix_from_m_scan;
+        const int_type* ix_prefix; /* by query position only */
+        int_type iy_extend;        /* dsm[GAP][GAP][t_prev][t_cur]      -- one value per row    */
     };
+
 
     QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6],
                  bool has_positive_gap)
@@ -113,7 +115,7 @@ public:
 
     /* Also carried in RowView; kept here for callers that have no row in hand,
        which is legitimate because this term has no target dependence. */
-    const int* ix_extend() const
+    const int_type* ix_extend() const
     {
         return m_ix_extend.get();
     }
@@ -136,16 +138,16 @@ private:
        position, so the stride multiply it replaces is on the sweep's hot path. */
     std::uint32_t m_offsets[kContexts];
 
-    MallocRAII<int> m_m_from_m;
-    MallocRAII<int> m_m_from_ix;
-    MallocRAII<int> m_m_from_iy;
-    MallocRAII<int> m_m_open;
-    MallocRAII<int> m_close;
-    MallocRAII<int> m_iy_from_m;
-    MallocRAII<int> m_ix_from_m;
-    MallocRAII<int> m_ix_extend;
-    MallocRAII<int> m_ix_from_m_scan;
-    MallocRAII<int> m_ix_prefix;
-    int m_iy_extend[kContexts]{};
+    MallocRAII<int_type> m_m_from_m;
+    MallocRAII<int_type> m_m_from_ix;
+    MallocRAII<int_type> m_m_from_iy;
+    MallocRAII<int_type> m_m_open;
+    MallocRAII<int_type> m_close;
+    MallocRAII<int_type> m_iy_from_m;
+    MallocRAII<int_type> m_ix_from_m;
+    MallocRAII<int_type> m_ix_extend;
+    MallocRAII<int_type> m_ix_from_m_scan;
+    MallocRAII<int_type> m_ix_prefix;
+    int_type m_iy_extend[kContexts]{};
     bool m_has_positive_gap;
 };

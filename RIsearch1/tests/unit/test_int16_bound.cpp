@@ -5,6 +5,7 @@
 
 #include <vector>
 
+#include "align/avx2/primitives.h"
 #include "align/int16_safety.h"
 #include "dsm.h"
 #include "nucleotide.h"
@@ -124,4 +125,34 @@ TEST(Int16Bound, HoldsForEveryMatrixRisearchShips)
         const auto q = alternating(0, 1, 20);
         EXPECT_TRUE(fits_int16(dsm, q.data(), 20)) << name;
     }
+}
+
+// The conditions dispatch.h uses to pick the narrow sweep. Nothing else fails if
+// these stop holding -- the run stays correct and quietly loses the width.
+
+TEST(Int16Dispatch, AnAsoOfTheUsualLengthTakesTheNarrowSweep)
+{
+    short dsm[6][6][6][6];
+    matrix("su95_noGU", dsm);
+    const auto q = alternating(0, 1, 20);
+
+    EXPECT_GT(20u, v_lanes<std::int16_t>()) << "needs one full block past column 1";
+    EXPECT_TRUE(fits_int16(dsm, q.data(), 20));
+}
+
+TEST(Int16Dispatch, TheTwoWidthsAreWhatTheKernelAssumes)
+{
+    // The block loops and their clamps are written in terms of these.
+    EXPECT_EQ(v_lanes<std::int32_t>(), 8u);
+    EXPECT_EQ(v_lanes<std::int16_t>(), 16u);
+}
+
+TEST(Int16Dispatch, ALongQueryFallsBackRatherThanOverflowing)
+{
+    short dsm[6][6][6][6];
+    matrix("su95_noGU", dsm);
+    const auto q = alternating(0, 1, 60);
+
+    EXPECT_GT(int16_bound(dsm, q.data(), 60), 30000);
+    EXPECT_FALSE(fits_int16(dsm, q.data(), 60));
 }

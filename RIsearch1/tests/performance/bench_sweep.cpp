@@ -20,6 +20,7 @@
 
 #include "cli/cli.h"
 #include "dsm.h"
+#include "align/QueryBatch.h"
 #include "align/linspace.h"
 #include "memory/ByteBuffer.hpp"
 
@@ -68,6 +69,9 @@ config_st bench_config(int min_score)
     config.tblen = 40;
     config.vicinity = 0;
     config.all_vs_all = 1;
+    /* What the CLI defaults it to. Zero would read as a force-start request,
+       which aligns a fixed window instead of sweeping. */
+    config.force_start_val = -1;
     return config;
 }
 
@@ -96,6 +100,48 @@ double measure(int min_score, int repeats)
 
     const double seconds = std::chrono::duration<double>(elapsed).count();
     const double cells = static_cast<double>(repeats) * kQueryLength * kTargetLength;
+    return cells / seconds;
+}
+
+// The same work through the path a run with several ASOs takes: sixteen queries
+// swept together, one query to a lane. RIs_linSpace above never reaches this
+// kernel, so without this a change that only slows the batched sweep reads as
+// no change at all.
+double measure_batched(int min_score, int repeats)
+{
+    constexpr int kBatchQueries = static_cast<int>(QueryBatch::kQueries);
+
+    ByteBuffer target;
+    make_sequence(target, kTargetLength, 0xf00d);
+
+    ByteBuffer queries[kBatchQueries];
+    char names[kBatchQueries][8];
+    for (int k = 0; k < kBatchQueries; k++) {
+        make_sequence(queries[k], kQueryLength, 0x5eed + static_cast<std::uint64_t>(k));
+        std::snprintf(names[k], sizeof(names[k]), "q%d", k);
+    }
+
+    const config_st config = bench_config(min_score);
+
+    short dsm[6][6][6][6];
+    char matname[] = "su95_noGU";
+    getMat(matname, &dsm[0][0][0][0], config.extension_penalty, 0);
+
+    std::fflush(stdout);
+    testing::internal::CaptureStdout();
+    const auto start = std::chrono::steady_clock::now();
+    for (int r = 0; r < repeats; r++) {
+        QueryBatch batch;
+        for (int k = 0; k < kBatchQueries; k++) {
+            batch.add(queries[k], names[k], k + 1, kQueryLength);
+        }
+        batch.run(target, dsm, "t", 1, kTargetLength, config);
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    testing::internal::GetCapturedStdout();
+
+    const double seconds = std::chrono::duration<double>(elapsed).count();
+    const double cells = static_cast<double>(repeats) * kBatchQueries * kQueryLength * kTargetLength;
     return cells / seconds;
 }
 
@@ -133,6 +179,22 @@ TEST(Performance, TracebackShareOfRuntime)
     const double both = measure(800, 40);
     const double share = 1.0 - both / sweep;
     std::printf("[ PERF     ] %-22s %8.1f %% of runtime\n", "traceback", share * 100.0);
+}
+
+// The batched sweep on its own, at a threshold no hit reaches.
+TEST(Performance, BatchedSweepThroughput)
+{
+    const double rate = measure_batched(INT_MAX, 40);
+    report("batched sweep only", rate);
+    EXPECT_GT(rate, 100e6) << "the batched sweep has slowed by more than an order of magnitude";
+}
+
+// The batched sweep plus the traceback, at the cutoff the pipeline uses.
+TEST(Performance, BatchedSweepAndReportThroughput)
+{
+    const double rate = measure_batched(800, 40);
+    report("batched + traceback", rate);
+    EXPECT_GT(rate, 50e6) << "the batched path has slowed by more than an order of magnitude";
 }
 
 } // namespace

@@ -179,6 +179,44 @@ public:
         return true;
     }
 
+    /* One column's terms, sixteen lanes of each, named as the single query
+       profile names them so a sweep written against either reads the same. */
+    struct ColumnTerms {
+        const std::int16_t* m_from_m;
+        const std::int16_t* m_from_ix;
+        const std::int16_t* m_from_iy;
+        const std::int16_t* m_open;
+        const std::int16_t* close;
+        const std::int16_t* iy_from_m;
+    };
+
+    /* The two tables a row reads, and the term that has no query dependence. */
+    struct RowView {
+        const std::int16_t* pair;
+        const std::int16_t* solo;
+        std::int16_t iy_extend;
+
+        ColumnTerms column(unsigned i) const
+        {
+            const std::int16_t* const p = pair + i * kPairGroup;
+            const std::int16_t* const s = solo + i * kSoloGroup;
+            return {p + kMFromM * kLanes,   s + kMFromIx * kLanes, p + kMFromIy * kLanes,
+                    s + kMOpen * kLanes,    s + kClose * kLanes,   p + kIyFromM * kLanes};
+        }
+    };
+
+    RowView row(unsigned ctx, unsigned t_cur) const
+    {
+        return {m_pair_base[ctx], m_solo_base[t_cur], m_iy_extend[ctx]};
+    }
+
+    /* ix_from_m_scan belongs to the row the bulge is in, which is the row above
+       the one running the scan, so it is read at that row's target nucleotide. */
+    const std::int16_t* scan_terms(unsigned t_cur) const
+    {
+        return m_solo_base[t_cur] + kIxFromMScan * kLanes;
+    }
+
     std::uint32_t m() const
     {
         return m_m;

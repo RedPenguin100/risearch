@@ -40,7 +40,7 @@
     }
 }
 
-static char index2nt(unsigned char ix)
+[[maybe_unused]] static char index2nt(unsigned char ix)
 {
     switch (ix) {
     case 0:
@@ -92,7 +92,7 @@ static constexpr SeqCodeTable kSeqCodes{};
  * and no length for the caller to correct. False means the sequence held a
  * character that is not a nucleotide code at all, and should be skipped.
  */
-static bool seq2ix(std::uint32_t len, const char* seq, ByteBuffer& retIx, const char* name,
+[[maybe_unused]] static bool seq2ix(std::uint32_t len, const char* seq, ByteBuffer& retIx, const char* name,
                    const char* type)
 {
     retIx.clear();

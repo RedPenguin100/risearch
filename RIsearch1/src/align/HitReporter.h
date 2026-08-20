@@ -71,7 +71,10 @@ public:
     /* The runs the sweep leaves behind -- the best score ending at each target
        position and the query position it ended at -- turned into reported hits.
        Which of them get printed is an output mode question. */
-    void report_sweep(const int* hits_score, const int* hits_pos, int threshold,
+    /* The runs are read by value, so a sweep that keeps them narrower than the
+       reporting does needs no widening pass of its own. */
+    template<typename Score>
+    void report_sweep(const Score* hits_score, const Score* hits_pos, int threshold,
                       const RunningMax& running_max)
     {
         if (!(m_config.doSubopt && (m_config.filter_e || m_config.printShort > 1))) {

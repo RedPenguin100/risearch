@@ -115,7 +115,7 @@ static long long int16_bound(const short dsm[6][6][6][6], const unsigned char* q
  * Given dsm matrix, query sequence and its length, returns if the maximal score fits in
  * int16 wide lanes. We choose 30k as an upper boundary out of abundance of safety.
  */
-static bool fits_int16(const short dsm[6][6][6][6], const unsigned char* query_sequence,
+[[maybe_unused]] static bool fits_int16(const short dsm[6][6][6][6], const unsigned char* query_sequence,
                        std::uint32_t m)
 {
     return !is_pos_target_bulge(dsm) && !is_pos_query_bulge(dsm) &&

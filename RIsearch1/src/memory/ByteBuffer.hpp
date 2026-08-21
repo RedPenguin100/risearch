@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <utility> // for std::exchange
+
 /**
  * Lightweight wrapper for char / byte pointers.
  *
@@ -15,6 +17,7 @@
 class ByteBuffer {
 public:
     ByteBuffer() = default;
+
     ~ByteBuffer()
     {
         std::free(m_data);
@@ -22,6 +25,28 @@ public:
 
     ByteBuffer(const ByteBuffer&) = delete;
     ByteBuffer& operator=(const ByteBuffer&) = delete;
+
+
+
+    // Move Constructor
+    ByteBuffer(ByteBuffer&& other) noexcept
+        : m_data(std::exchange(other.m_data, nullptr)), m_size(std::exchange(other.m_size, 0)),
+          m_capacity(std::exchange(other.m_capacity, 0))
+    {
+    }
+
+    // Move Assignment Operator
+    ByteBuffer& operator=(ByteBuffer&& other) noexcept
+    {
+        if (this != &other) {
+            std::free(m_data);
+            m_data = std::exchange(other.m_data, nullptr);
+            m_size = std::exchange(other.m_size, 0);
+            m_capacity = std::exchange(other.m_capacity, 0);
+        }
+        return *this;
+    }
+
 
     void clear()
     {
@@ -32,7 +57,7 @@ public:
     {
         return m_size;
     }
-    [[nodiscard]] bool empty() const
+    [[nodiscard]] bool is_empty() const
     {
         return m_size == 0;
     }
@@ -103,6 +128,8 @@ public:
         reserve(m_size + 1);
         m_data[m_size] = '\0';
     }
+
+
     void reserve(std::size_t wanted)
     {
         if (wanted <= m_capacity)
@@ -113,9 +140,8 @@ public:
         m_data = static_cast<char*>(std::realloc(m_data, capacity));
         m_capacity = capacity;
     }
+
 private:
-
-
     char* m_data = nullptr;
     std::size_t m_size = 0;
     std::size_t m_capacity = 0;

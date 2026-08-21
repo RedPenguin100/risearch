@@ -18,7 +18,7 @@ public:
 
     [[nodiscard]] explicit operator bool() const
     {
-        return !m_sequence.empty() || !m_name.empty();
+        return !m_sequence.is_empty() || !m_name.is_empty();
     }
 
 private:

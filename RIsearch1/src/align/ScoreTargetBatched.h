@@ -1,0 +1,333 @@
+#pragma once
+
+#include <climits>
+#include <cstdint>
+#include <utility>
+
+#include "RunningMax.h"
+#include "align/avx2/primitives.h"
+#include "align/int16_safety.h"
+#include "optimization/BatchedQueryProfile.h"
+#include "optimization/QueryProfile.h"
+
+/* The sweep of ScoreTarget.h with one query per lane instead of one query spread
+ * across the lanes.
+ *
+ * The kernels there put sixteen query positions of a single query in a register,
+ * so Ix reads the row it writes and has to be carried as a prefix max, and M and
+ * Iy need blocks whose geometry fits the query's length. At the lengths this
+ * program is used at most of those lanes hold nothing.
+ *
+ * Sixteen different queries fill every lane whatever their length, and they are
+ * independent: nothing here crosses lanes, so there is no prefix max, no block
+ * geometry and no length-dependent dispatch. Every statement below is one of
+ * score_target_scalar's with each scalar replaced by sixteen.
+ *
+ * IX IS NEVER STORED. Ix[j] is read in one place only, by the row below it and
+ * one column to the left, and its own recurrence runs along the row. With
+ * ix_prefix taken out it is a plain running max whose inputs at column i are
+ * M[j][i - 1] and a term -- both of which the row below is already reading -- so
+ * that row runs the max itself, one column behind, and carries it in a register.
+ * What ix_prefix owes is folded into m_from_ix, which is where the profile keeps
+ * it.
+ */
+
+#if RISEARCH1_HAS_AVX2
+
+/* RunningMax for sixteen queries at once. The row number needs more than a short,
+   so it is held as two halves of eight ints. */
+struct BatchedRunningMax {
+    __m256i score;
+    __m256i pos_i;
+    __m256i pos_j_lo;
+    __m256i pos_j_hi;
+};
+
+/* A row's scores are its columns' M plus their close; the largest of them, read
+   back out of the row the sweep has just written. Max is associative, so taking
+   the columns in any order gives the same answer as accumulating them. */
+__attribute__((target("avx2"), always_inline)) static inline __m256i
+row_max_exact(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& T, unsigned m)
+{
+    constexpr auto queries = BatchedQueryProfile::kLanes;
+    __m256i row_max = v_add<std::int16_t>(v_vec_load(m_cur + queries),
+                                          v_vec_load(T.column(1).close));
+    for (auto i = 2u; i <= m; i++) {
+        row_max = _mm256_max_epi16(row_max,
+                                   v_add<std::int16_t>(v_vec_load(m_cur + i * queries),
+                                                       v_vec_load(T.column(i).close)));
+    }
+    return row_max;
+}
+
+/* The column each query's row max was reached at, first one wins. Walking the
+   columns backwards makes "first" fall out of the order the blends happen in: a
+   lower column overwrites what a higher one selected, and the row max is a max
+   over exactly these candidates, so every query matches somewhere. */
+__attribute__((target("avx2"), always_inline)) static inline __m256i
+row_max_position(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& T, unsigned m,
+                 __m256i row_max)
+{
+    constexpr auto queries = BatchedQueryProfile::kLanes;
+    __m256i pos = _mm256_set1_epi16(1);
+    for (auto i = m; i >= 1; i--) {
+        const __m256i candidate = v_add<std::int16_t>(v_vec_load(m_cur + i * queries),
+                                                      v_vec_load(T.column(i).close));
+        pos = _mm256_blendv_epi8(pos, _mm256_set1_epi16(static_cast<std::int16_t>(i)),
+                                 _mm256_cmpeq_epi16(candidate, row_max));
+    }
+    return pos;
+}
+
+/* Sixteen target positions of sixteen queries, turned into sixteen queries of
+ * sixteen target positions.
+ *
+ * The sweep writes a row's scores together because that is the order it has them
+ * in; the reporting reads one lane's whole run, so one of the two has to be
+ * transposed. unpack works inside each 128-bit half, so the eight by eight
+ * pattern over rows 0..7 transposes both halves at once and a permute puts the
+ * results together. out[l] receives target positions 0..15 of query l. */
+__attribute__((target("avx2"), always_inline)) static inline void
+transpose_to_queries(const std::int16_t* by_target, std::int16_t* const* out,
+                     unsigned queries)
+{
+    __m256i y[16];
+    for (auto half = 0u; half < 2; half++) {
+        const std::int16_t* const in = by_target + half * 8 * 16;
+        __m256i a[8];
+        for (auto k = 0u; k < 4; k++) {
+            const __m256i x0 = v_vec_load(in + (2 * k) * 16);
+            const __m256i x1 = v_vec_load(in + (2 * k + 1) * 16);
+            a[2 * k] = _mm256_unpacklo_epi16(x0, x1);
+            a[2 * k + 1] = _mm256_unpackhi_epi16(x0, x1);
+        }
+        __m256i b[8];
+        for (auto k = 0u; k < 4; k++) {
+            const auto src = (k / 2) * 4 + (k % 2);
+            b[2 * k] = _mm256_unpacklo_epi32(a[src], a[src + 2]);
+            b[2 * k + 1] = _mm256_unpackhi_epi32(a[src], a[src + 2]);
+        }
+        __m256i* const dst = y + half * 8;
+        for (auto k = 0u; k < 4; k++) {
+            dst[2 * k] = _mm256_unpacklo_epi64(b[k], b[k + 4]);
+            dst[2 * k + 1] = _mm256_unpackhi_epi64(b[k], b[k + 4]);
+        }
+    }
+    for (auto l = 0u; l < 8 && l < queries; l++) {
+        v_vec_store(out[l], _mm256_permute2x128_si256(y[l], y[8 + l], 0x20));
+    }
+    for (auto l = 8u; l < queries; l++) {
+        v_vec_store(out[l], _mm256_permute2x128_si256(y[l - 8], y[l], 0x31));
+    }
+}
+
+/* M and Iy for one column, sixteen queries at a time, and the column's
+   contribution to the row max. Mirrors main_dp_loop_avx2, which does the same
+   for eight columns of one query. */
+template<bool kDefer>
+__attribute__((target("avx2"), always_inline)) static inline void
+main_dp_column_batched(const BatchedQueryProfile::ColumnTerms& t, __m256i m_last_prev,
+                       __m256i iy_last_prev, __m256i m_last_here, __m256i iy_last_here,
+                       __m256i ix_scan, __m256i iy_ext, std::int16_t* m_out, std::int16_t* iy_out,
+                       __m256i* row_max)
+{
+    const __m256i zero = _mm256_setzero_si256();
+
+    /* Assign M with a 4-way max. */
+    const __m256i m_new = _mm256_max_epi16(
+        _mm256_max_epi16(
+            /* coming from a match, and its M[lastRow][i-1] != 0 test */
+            _mm256_blendv_epi8(v_add<std::int16_t>(m_last_prev, v_vec_load(t.m_from_m)),
+                               _mm256_set1_epi16(-1), _mm256_cmpeq_epi16(m_last_prev, zero)),
+            /* coming from gap in target, as the row above's scan left it */
+            v_add<std::int16_t>(ix_scan, v_vec_load(t.m_from_ix))),
+        _mm256_max_epi16(
+            /* coming from gap in query */
+            v_add<std::int16_t>(iy_last_prev, v_vec_load(t.m_from_iy)),
+            /* start fresh */
+            v_vec_load(t.m_open)));
+    v_vec_store(m_out, m_new);
+
+    *row_max = _mm256_max_epi16(*row_max,
+                                kDefer ? m_new : v_add<std::int16_t>(m_new, v_vec_load(t.close)));
+
+    /* Iy's predecessors are vertical: previous target position, same column. */
+    v_vec_store(iy_out, _mm256_max_epi16(v_add<std::int16_t>(m_last_here, v_vec_load(t.iy_from_m)),
+                                         v_add<std::int16_t>(iy_last_here, iy_ext)));
+}
+
+/* M and Iy hold two target positions each, as they do in the single query sweep.
+   Ix is not among them: see IX IS NEVER STORED above.
+
+   WHAT ROW 1 HANDS OVER. The scan a row runs on behalf of the row above it is
+
+       U[j][i] = max(U[j][i - 1], M[j][i - 1] + ix_from_m_scan[i]),
+
+   and the terms it reads come from the profile, at the target nucleotide of the
+   row the bulge is in. Row 1 is the exception: it is not written by this kernel
+   at all. The caller computes it in int32 under the recurrence that governs a
+   first row -- where a predecessor of exactly 0 is refused and the whole thing
+   is floored at 0 -- which is not the recurrence this scan states. So the caller
+   converts what it computed into terms of its own choosing, such that running
+   the scan above over them reproduces U[1][i] exactly. That is what arrives here
+   as ix_from_m_scan_row1, and it is read only when j == 2.
+
+   hs16 and hp16 take target position j at [(j - 1) * queries]. */
+/* kDefer: a row's close is added once at the end as a bound rather than per
+   column. Not available where the reporting reads a non-clearing row's score,
+   which is what a vicinity window does. */
+template<bool kDefer>
+__attribute__((target("avx2"))) static void
+score_target_batched(const unsigned char* target_sequence, const BatchedQueryProfile& profile,
+                     std::int16_t* const* M, std::int16_t* const* Iy,
+                     const std::int16_t* ix_from_m_scan_row1, std::int16_t* hs16,
+                     std::int16_t* hp16, std::size_t n, int threshold,
+                     BatchedRunningMax& running_max)
+{
+    const auto m = profile.m();
+    constexpr auto queries = BatchedQueryProfile::kLanes;
+    constexpr auto solo_group = BatchedQueryProfile::kSoloGroup;
+
+    std::int16_t* m_cur = M[0];
+    std::int16_t* m_last = M[1];
+    std::int16_t* iy_cur = Iy[0];
+    std::int16_t* iy_last = Iy[1];
+
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i one = _mm256_set1_epi16(1);
+
+    /* A row's position only has to be right where it is read, which is where the
+       row max clears the threshold or improves on the query's best so far -- the
+       same test the single query kernels defer their position scan behind. */
+    const __m256i v_threshold = _mm256_set1_epi16(static_cast<std::int16_t>(
+        threshold > SHRT_MAX ? SHRT_MAX : (threshold < SHRT_MIN ? SHRT_MIN : threshold)));
+
+    /* A row is wanted where it clears the threshold or improves on the query's
+       best, which is one comparison against the smaller of the two. The best only
+       rises, and only where a row was wanted, so this rises with it. */
+    __m256i gate = _mm256_min_epi16(running_max.score, v_threshold);
+
+    for (auto j = 2u; j <= n; j++) {
+        const auto target_current = target_sequence[n - j];
+        const auto target_prev = target_sequence[n - j + 1];
+
+        const auto context = QueryProfile<std::int32_t>::context(target_prev, target_current);
+        const auto T = profile.row(context, target_current);
+        const __m256i iy_ext = _mm256_set1_epi16(T.iy_extend);
+
+        /* The run the row above's scan reads. Row 2's is the caller's; every
+           later row's sits at the target nucleotide of the row above. */
+        const auto scan_stride = j == 2 ? queries : solo_group;
+        /* Already at column 1's term, so that the step at the top of the column
+           loop leaves it on column i. */
+        const std::int16_t* scan =
+            (j == 2 ? ix_from_m_scan_row1 : profile.scan_terms(target_prev)) + scan_stride;
+
+        const auto t1 = T.column(1);
+
+        /* Column 1 is the query's first nt, nothing can precede it. */
+        const __m256i m_col1 = _mm256_max_epi16(zero, v_vec_load(t1.m_open));
+        v_vec_store(m_cur + queries, m_col1);
+
+        /* Deferring, this is a row max over M alone; the close each column owes
+           it is put back once, as a bound, when the row is finished. */
+        __m256i row_max = kDefer ? m_col1 : v_add<std::int16_t>(m_col1, v_vec_load(t1.close));
+
+        __m256i m_last_prev = v_vec_load(m_last + queries);
+        __m256i iy_last_prev = v_vec_load(iy_last + queries);
+
+        /* Iy bulges a target nt, j >= 2 so a bulge is possible. */
+        v_vec_store(iy_cur + queries,
+                    _mm256_max_epi16(v_add<std::int16_t>(m_last_prev, v_vec_load(t1.iy_from_m)),
+                                     v_add<std::int16_t>(iy_last_prev, iy_ext)));
+
+        /* Ix[j-1][1] is unreachable, and carried that is what the row above's
+           scan enters its first column with. */
+        __m256i ix_scan = _mm256_set1_epi16(NEG_INF_SHORT);
+
+        for (auto i = 2u; i < m; i++) {
+            const auto off = i * queries;
+            scan += scan_stride;
+
+            const __m256i m_last_here = v_vec_load(m_last + off);
+            const __m256i iy_last_here = v_vec_load(iy_last + off);
+
+            main_dp_column_batched<kDefer>(T.column(i), m_last_prev, iy_last_prev, m_last_here,
+                                   iy_last_here, ix_scan, iy_ext, m_cur + off, iy_cur + off,
+                                   &row_max);
+
+            /* One step of the row above's Ix scan, a column behind this row so
+               that column i is ready for column i + 1, where it is read. */
+            ix_scan = _mm256_max_epi16(ix_scan,
+                                       v_add<std::int16_t>(m_last_prev, v_vec_load(scan)));
+
+            m_last_prev = m_last_here;
+            iy_last_prev = iy_last_here;
+        }
+
+        /* THE LAST COLUMN NEEDS ONLY M. Iy[j][m] is read by exactly one thing,
+           M's target-bulge arm at column m + 1, and by its own recurrence, which
+           the same thing reads one row further down; there being no column m + 1,
+           the whole chain leaves nothing behind. The Ix scan's step at column m
+           is the value column m + 1 would enter with, and goes for the same
+           reason. */
+        if (m >= 2) {
+            const auto t = T.column(m);
+            const __m256i m_new = _mm256_max_epi16(
+                _mm256_max_epi16(
+                    _mm256_blendv_epi8(v_add<std::int16_t>(m_last_prev, v_vec_load(t.m_from_m)),
+                                       _mm256_set1_epi16(-1),
+                                       _mm256_cmpeq_epi16(m_last_prev, zero)),
+                    v_add<std::int16_t>(ix_scan, v_vec_load(t.m_from_ix))),
+                _mm256_max_epi16(v_add<std::int16_t>(iy_last_prev, v_vec_load(t.m_from_iy)),
+                                 v_vec_load(t.m_open)));
+            v_vec_store(m_cur + m * queries, m_new);
+
+            row_max = _mm256_max_epi16(
+                row_max, kDefer ? m_new : v_add<std::int16_t>(m_new, v_vec_load(t.close)));
+        }
+
+        /* Deferring, what the row loop has is the largest M of the row; adding
+           the largest close any of its columns could have owed bounds the row's
+           score from above, since a saturating add is monotone in both arms. A
+           row whose bound clears neither the threshold nor the query's best is
+           read nowhere, so the bound stands in for its score. */
+        const __m256i bound =
+            kDefer ? v_add<std::int16_t>(row_max, v_vec_load(profile.close_max(target_current)))
+                   : row_max;
+
+        if (!kDefer || _mm256_movemask_epi8(_mm256_cmpgt_epi16(bound, gate)) != 0) {
+            const __m256i exact = kDefer ? row_max_exact(m_cur, T, m) : row_max;
+            const __m256i improved = _mm256_cmpgt_epi16(exact, running_max.score);
+            const __m256i wanted = _mm256_cmpgt_epi16(exact, gate);
+            const __m256i row_pos = _mm256_movemask_epi8(wanted) != 0
+                                        ? row_max_position(m_cur, T, m, exact)
+                                        : one;
+
+            v_vec_store(hs16 + (j - 1) * queries, exact);
+            v_vec_store(hp16 + (j - 1) * queries, row_pos);
+
+            running_max.score = _mm256_max_epi16(running_max.score, exact);
+            gate = _mm256_min_epi16(running_max.score, v_threshold);
+            running_max.pos_i = _mm256_blendv_epi8(running_max.pos_i, row_pos, improved);
+            /* The row number does not fit a short, so the sixteen query mask is
+               widened to two eight wide ones to select it. */
+            const __m256i v_j = _mm256_set1_epi32(static_cast<int>(j));
+            running_max.pos_j_lo = _mm256_blendv_epi8(
+                running_max.pos_j_lo, v_j, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(improved)));
+            running_max.pos_j_hi =
+                _mm256_blendv_epi8(running_max.pos_j_hi, v_j,
+                                   _mm256_cvtepi16_epi32(_mm256_extracti128_si256(improved, 1)));
+        } else {
+            /* The position is read only where a row reported, and such a row went
+               the other way, so this one's is left as it lies. */
+            v_vec_store(hs16 + (j - 1) * queries, bound);
+        }
+
+        /* The row just written becomes the row read. */
+        std::swap(m_cur, m_last);
+        std::swap(iy_cur, iy_last);
+    }
+}
+
+#endif /* RISEARCH1_HAS_AVX2 */

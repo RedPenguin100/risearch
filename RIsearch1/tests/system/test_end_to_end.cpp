@@ -118,30 +118,22 @@ TEST(EndToEnd, SkipsEmptyRecordsOnBothSides)
     EXPECT_EQ(out.find("all_gaps"), std::string::npos);
 }
 
-TEST(EndToEnd, ReportsAnUnreadableTargetFile)
+TEST(EndToEndDeathTest, ReportsAnUnreadableTargetFile)
 {
     auto args = BaseArgs("400");
     *std::find(args.begin(), args.end(), kTarget) = RISEARCH_TEST_DATA "/does_not_exist.fa";
 
-    testing::internal::CaptureStderr();
-    const std::string out = risearch_test::Run(args);
-    const std::string err = testing::internal::GetCapturedStderr();
-
-    EXPECT_TRUE(out.empty()) << "a run that could not open its target printed hits";
-    EXPECT_NE(err.find("is not readable"), std::string::npos) << err;
+    EXPECT_EXIT(risearch_test::Run(args), ::testing::ExitedWithCode(255),
+                "Target file .* is not readable");
 }
 
-TEST(EndToEnd, ReportsAnUnreadableQueryFile)
+TEST(EndToEndDeathTest, ReportsAnUnreadableQueryFile)
 {
     auto args = BaseArgs("400");
     *std::find(args.begin(), args.end(), kQuery) = RISEARCH_TEST_DATA "/does_not_exist.fa";
 
-    testing::internal::CaptureStderr();
-    const std::string out = risearch_test::Run(args);
-    const std::string err = testing::internal::GetCapturedStderr();
-
-    EXPECT_TRUE(out.empty()) << "a run that could not open its target printed hits";
-    EXPECT_NE(err.find("is not readable"), std::string::npos) << err;
+    EXPECT_EXIT(risearch_test::Run(args), ::testing::ExitedWithCode(255),
+                "Query file .* is not readable");
 }
 
 // -p2 is: query, qbeg, qend, target, tbeg, tend, score, energy

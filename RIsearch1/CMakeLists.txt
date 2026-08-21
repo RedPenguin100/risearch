@@ -36,7 +36,10 @@ list(REMOVE_DUPLICATES RISEARCH1_INCLUDES)
 set(RISEARCH_TAUSO_VERSION "dev")
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pyproject.toml")
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../pyproject.toml" _pyproject)
-    string(REGEX MATCH "\nversion = \"([0-9]+\.[0-9]+\.[0-9]+)\"" _unused "${_pyproject}")
+    # The trailing group takes a PEP 440 pre-release suffix -- 1.6.0b1, 1.6.0rc2 --
+    # so a beta reports the version it was published under rather than falling
+    # through to "dev".
+    string(REGEX MATCH "\nversion = \"([0-9]+\.[0-9]+\.[0-9]+[0-9a-z]*)\"" _unused "${_pyproject}")
     if(CMAKE_MATCH_1)
         set(RISEARCH_TAUSO_VERSION "${CMAKE_MATCH_1}")
     endif()

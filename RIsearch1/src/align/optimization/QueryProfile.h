@@ -42,13 +42,23 @@ public:
 
     QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6],
                  bool has_positive_gap)
-        : m_stride(m + 1), m_m_from_m(kContexts * (m + 1)), m_m_from_ix(kContexts * (m + 1)),
-          m_m_from_iy(kContexts * (m + 1)), m_m_open(kContexts * (m + 1)),
-          m_close(kContexts * (m + 1)), m_iy_from_m(kContexts * (m + 1)),
-          m_ix_from_m(kContexts * (m + 1)), m_ix_extend(m + 1),
-          m_ix_from_m_scan(kContexts * (m + 1)), m_ix_prefix(m + 1),
+        : m_length(m), m_stride(m + 1 + kBlockSlack),
+          m_m_from_m(kContexts * m_stride), m_m_from_ix(kContexts * m_stride),
+          m_m_from_iy(kContexts * m_stride), m_m_open(kContexts * m_stride),
+          m_close(kContexts * m_stride), m_iy_from_m(kContexts * m_stride),
+          m_ix_from_m(kContexts * m_stride), m_ix_extend(m_stride),
+          m_ix_from_m_scan(kContexts * m_stride), m_ix_prefix(m_stride),
           m_has_positive_gap(has_positive_gap)
     {
+        /* A block that starts on a query position reads a whole register from
+           there, so the slack past the last position is what a window shorter
+           than one block reads rather than the next context's run. Nothing
+           consults these columns; they are written so none of them is
+           undefined. */
+        for (auto i = m + 1; i < m_stride; i++) {
+            m_ix_extend[i] = 0;
+            m_ix_prefix[i] = 0;
+        }
         /* No target dependence: a query bulge over a gap on both sides. */
         for (auto i = 2u; i <= m; i++) {
             m_ix_extend[i] = dsm[query_sequence[i - 2]][query_sequence[i - 1]][GAP][GAP];
@@ -75,6 +85,17 @@ public:
 
                 /* No query dependence: a target bulge over a gap. */
                 m_iy_extend[ctx] = dsm[GAP][GAP][t_prev][t_cur];
+
+                for (auto i = m + 1; i < m_stride; i++) {
+                    m_m_from_m[off + i] = 0;
+                    m_m_from_ix[off + i] = 0;
+                    m_m_from_iy[off + i] = 0;
+                    m_m_open[off + i] = 0;
+                    m_close[off + i] = 0;
+                    m_iy_from_m[off + i] = 0;
+                    m_ix_from_m[off + i] = 0;
+                    m_ix_from_m_scan[off + i] = 0;
+                }
 
                 for (auto i = 1u; i <= m; i++) {
                     const auto q_cur = query_sequence[i - 1];
@@ -110,7 +131,7 @@ public:
 
     std::uint32_t query_length() const
     {
-        return m_stride - 1;
+        return m_length;
     }
 
     /* Also carried in RowView; kept here for callers that have no row in hand,
@@ -132,7 +153,10 @@ public:
 
 private:
     static constexpr unsigned kContexts = DSM_SIDE * DSM_SIDE;
+    /* One register short of a block, so a block may start on any query position. */
+    static constexpr unsigned kBlockSlack = 16;
 
+    std::uint32_t m_length;
     std::uint32_t m_stride;
     /* Where each context's run starts. A row lookup runs once per target
        position, so the stride multiply it replaces is on the sweep's hot path. */

@@ -232,6 +232,7 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
               const QueryProfile<int_type>& profile, int q_offset, int_type* best,
               RunningVectorMax& first_row)
 {
+    constexpr auto kBlock = static_cast<int>(v_lanes<int_type>());
     const int_type* const ix_ext = profile.ix_extend();
 
     const auto T = profile.row(QueryProfile<int_type>::context(GAP, target_seq[0]));
@@ -252,6 +253,13 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
                         Ix[1][i - 1] != 0 ? Ix[1][i - 1] + ix_ext[qp] : -1, 0);
 
         Iy[1][i] = neg_inf<int_type>();
+    }
+
+    /* The single block a window shorter than one block runs writes columns 2
+       through kBlock + 1, and its running max reads best where it is about to
+       write, so those columns start from the same place the others do. */
+    for (auto i = m + 1; i <= kBlock + 1; i++) {
+        best[i] = neg_inf<int_type>();
     }
 
     const auto qp_first = q_offset + 1;
@@ -289,10 +297,13 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
 
         const __m256i v_iy_ext = v_int_to_avx2<int_type>(iy_ext);
 
-        constexpr auto kBlock = static_cast<int>(v_lanes<int_type>());
         for (auto start = 2; start <= m; start += kBlock) {
-            /* The clamp is what makes the last block end exactly at m. */
-            const auto i = MIN(start, m - (kBlock - 1));
+            /* The clamp is what makes the last block end exactly at m, and what
+               keeps a window shorter than one block on the single block that
+               starts at column 2. That block reaches past m, into the slack the
+               profile keeps; nothing reads those columns, since a column is read
+               only by the row below it and the column to its right. */
+            const auto i = MIN(start, MAX(2, m - (kBlock - 1)));
 
             /* For each column the block writes, its diagonal predecessor: one
                target position back and one query position back. */
@@ -352,7 +363,7 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
            ix_prefix back out of the Ix stored there is what the scan would have
            been carrying. */
         if (i <= m) {
-            const auto back = m - (kBlock - 1);
+            const auto back = MAX(2, m - (kBlock - 1));
             const __m256i prefix = v_vec_load<int_type>(ix_pref + back);
             const __m256i candidates =
                 v_max<int_type>(v_add<int_type>(v_vec_load<int_type>(m_cur + back - 1),
@@ -369,14 +380,19 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
 
 /* The vector fill needs eight columns to the right of column 1 for a block, and
    it may only drop Ix's and Iy's zero tests where no bulge term is positive. */
+/* A window shorter than one block still runs one, which writes past m into
+   columns the matrices hold but no window of this size fills. The matrices are
+   square in the traceback length, and both m and n are bounded by it, so the
+   longer of the two says whether a whole block fits. */
 template<typename int_type>
-static bool ris_fill_is_vectorized(int m, const QueryProfile<int_type>& profile)
+static bool ris_fill_is_vectorized(int m, int n, const QueryProfile<int_type>& profile)
 {
 #if RISEARCH1_HAS_AVX2
-    return m >= static_cast<int>(v_lanes<int_type>()) + 1 && !profile.has_positive_gap() &&
-           CPU_HAS_AVX2;
+    return m >= 2 && MAX(m, n) >= static_cast<int>(v_lanes<int_type>()) + 1 &&
+           !profile.has_positive_gap() && CPU_HAS_AVX2;
 #else
     (void)m;
+    (void)n;
     (void)profile;
     return false;
 #endif
@@ -389,7 +405,7 @@ static void ris_fill(ReversedSequence target_seq, int m, int n, int_type** M, in
                      RunningVectorMax& first_row)
 {
 #if RISEARCH1_HAS_AVX2
-    if (ris_fill_is_vectorized<int_type>(m, profile)) {
+    if (ris_fill_is_vectorized<int_type>(m, n, profile)) {
         ris_fill_avx2<int_type>(target_seq, m, n, M, Ix, Iy, profile, q_offset, best, first_row);
         return;
     }

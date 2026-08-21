@@ -100,6 +100,50 @@ static RunningMax transpose_best_cell(ReversedSequence target_seq, int m, int n,
     return running_max;
 }
 
+/* Target position 1 of the window fill, which the row loop cannot state.
+ *
+ * The recurrence a row runs reads the target position above it, and there is
+ * none here, so this row follows different rules: M can only open on the pair,
+ * Iy needs a previous target position and is unreachable, and Ix is the only
+ * state left with a recurrence -- along the query. The terms come from the
+ * (GAP, target_seq[0]) context, which is how a row with no previous target
+ * nucleotide is spelled.
+ *
+ * best starts empty here rather than at the fill's first row, because best
+ * only ever takes a max and every later row folds into it.
+ *
+ * first_row takes the row's best score and the column it was reached at; this
+ * row has one target position, so the position is a column and nothing more.
+ */
+template<typename int_type>
+static void fill_first_row(ReversedSequence target_seq, int m, int_type** M, int_type** Ix,
+                           int_type** Iy, const QueryProfile<int_type>& profile, int q_offset,
+                           int_type* best, RunningVectorMax& first_row)
+{
+    const auto T = profile.row(QueryProfile<int_type>::context(GAP, target_seq[0]));
+    const int_type* const ix_from_m_1 = T.ix_from_m;
+    const int_type* const ix_ext = profile.ix_extend();
+
+    M[1][1] = T.m_open[q_offset + 1];
+    best[1] = neg_inf<int_type>();
+    first_row.set(M[1][1] + T.close[q_offset + 1], 1);
+
+    /* The (1,1) cell can be in neither bulge state. */
+    Ix[1][1] = Iy[1][1] = neg_inf<int_type>();
+
+    for (auto i = 2; i <= m; i++) {
+        const auto qp = q_offset + i;
+        M[1][i] = T.m_open[qp];
+        best[i] = neg_inf<int_type>();
+        first_row.set_if_better(M[1][i] + T.close[qp], i);
+
+        Ix[1][i] = max3(M[1][i - 1] != 0 ? M[1][i - 1] + ix_from_m_1[qp] : -1,
+                        Ix[1][i - 1] != 0 ? Ix[1][i - 1] + ix_ext[qp] : -1, 0);
+
+        Iy[1][i] = neg_inf<int_type>();
+    }
+}
+
 /* Fills the three matrices and, per query column, the best M + close seen in any
  * target position. RIs backtracks through what this leaves behind, so every cell
  * is kept rather than two rows as the sweep keeps.
@@ -111,41 +155,7 @@ static void ris_fill_scalar(ReversedSequence target_seq, int m, int n, int_type*
 {
     const int_type* const ix_ext = profile.ix_extend();
 
-
-    /*
-     * Query position 1 and target position 1 have to be handled explicitly since
-     * at this point we do not have two residues to use.
-     *
-     * Handle the (1,1) cell explicitly since the boundary recursion includes (i-2) or (j-2) cases.
-     */
-
-    // Use this  QueryProfile<std::int32_t> to fetch terms that ignore the previous target nt (GAP)
-    // and relate to first target nt (target_seq[0])
-    const auto T = profile.row(QueryProfile<int_type>::context(GAP, target_seq[0]));
-    const int_type* const ix_from_m_1 = T.ix_from_m;
-
-    M[1][1] = T.m_open[q_offset + 1];
-    best[1] = neg_inf<int_type>();
-    /* Target position 1 only: its j is always 1, so the position is a query
-       column and nothing more. */
-    first_row.set(M[1][1] + T.close[q_offset + 1], 1);
-
-    /* (1,1) cell can not be in Ix or Iy state. */
-    Ix[1][1] = Iy[1][1] = neg_inf<int_type>();
-
-
-    /* init target position 1 */
-    for (auto i = 2; i <= m; i++) {
-        const auto qp = q_offset + i;
-        M[1][i] = T.m_open[qp];
-        best[i] = neg_inf<int_type>(); // must start empty, will be filled later.
-        first_row.set_if_better(M[1][i] + T.close[qp], i);
-
-        Ix[1][i] = max3(M[1][i - 1] != 0 ? M[1][i - 1] + ix_from_m_1[qp] : -1,
-                        Ix[1][i - 1] != 0 ? Ix[1][i - 1] + ix_ext[qp] : -1, 0);
-
-        Iy[1][i] = neg_inf<int_type>();
-    }
+    fill_first_row<int_type>(target_seq, m, M, Ix, Iy, profile, q_offset, best, first_row);
 
     const auto qp_first = q_offset + 1;
 
@@ -230,27 +240,8 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
               RunningVectorMax& first_row)
 {
     constexpr auto kBlock = static_cast<int>(v_lanes<int_type>());
-    const int_type* const ix_ext = profile.ix_extend();
 
-    const auto T = profile.row(QueryProfile<int_type>::context(GAP, target_seq[0]));
-    const int_type* const ix_from_m_1 = T.ix_from_m;
-
-    M[1][1] = T.m_open[q_offset + 1];
-    best[1] = neg_inf<int_type>();
-    first_row.set(M[1][1] + T.close[q_offset + 1], 1);
-    Ix[1][1] = Iy[1][1] = neg_inf<int_type>();
-
-    for (auto i = 2; i <= m; i++) {
-        const auto qp = q_offset + i;
-        M[1][i] = T.m_open[qp];
-        best[i] = neg_inf<int_type>();
-        first_row.set_if_better(M[1][i] + T.close[qp], i);
-
-        Ix[1][i] = max3(M[1][i - 1] != 0 ? M[1][i - 1] + ix_from_m_1[qp] : -1,
-                        Ix[1][i - 1] != 0 ? Ix[1][i - 1] + ix_ext[qp] : -1, 0);
-
-        Iy[1][i] = neg_inf<int_type>();
-    }
+    fill_first_row<int_type>(target_seq, m, M, Ix, Iy, profile, q_offset, best, first_row);
 
     /* The single block a window shorter than one block runs writes columns 2
        through kBlock + 1, and its running max reads best where it is about to

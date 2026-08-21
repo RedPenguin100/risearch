@@ -72,8 +72,8 @@ row_max_position(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& 
     for (auto i = m; i >= 1; i--) {
         const __m256i candidate =
             v_add<std::int16_t>(v_vec_load(m_cur + i * queries), v_vec_load(T.column(i).close));
-        pos = _mm256_blendv_epi8(pos, v_int_to_avx2<std::int16_t>(i),
-                                 _mm256_cmpeq_epi16(candidate, row_max));
+        pos = v_select(pos, v_int_to_avx2<std::int16_t>(i),
+                       v_equals<std::int16_t>(candidate, row_max));
     }
     return pos;
 }
@@ -83,40 +83,12 @@ row_max_position(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& 
  *
  * The sweep writes a row's scores together because that is the order it has them
  * in; the reporting reads one lane's whole run, so one of the two has to be
- * transposed. unpack works inside each 128-bit half, so the eight by eight
- * pattern over rows 0..7 transposes both halves at once and a permute puts the
- * results together. out[l] receives target positions 0..15 of query l. */
+ * transposed. out[l] receives target positions 0..15 of query l.
+ */
 __attribute__((target("avx2"), always_inline)) static inline void
 transpose_to_queries(const std::int16_t* by_target, std::int16_t* const* out, unsigned queries)
 {
-    __m256i y[16];
-    for (auto half = 0u; half < 2; half++) {
-        const std::int16_t* const in = by_target + half * 8 * 16;
-        __m256i a[8];
-        for (auto k = 0u; k < 4; k++) {
-            const __m256i x0 = v_vec_load(in + (2 * k) * 16);
-            const __m256i x1 = v_vec_load(in + (2 * k + 1) * 16);
-            a[2 * k] = _mm256_unpacklo_epi16(x0, x1);
-            a[2 * k + 1] = _mm256_unpackhi_epi16(x0, x1);
-        }
-        __m256i b[8];
-        for (auto k = 0u; k < 4; k++) {
-            const auto src = (k / 2) * 4 + (k % 2);
-            b[2 * k] = _mm256_unpacklo_epi32(a[src], a[src + 2]);
-            b[2 * k + 1] = _mm256_unpackhi_epi32(a[src], a[src + 2]);
-        }
-        __m256i* const dst = y + half * 8;
-        for (auto k = 0u; k < 4; k++) {
-            dst[2 * k] = _mm256_unpacklo_epi64(b[k], b[k + 4]);
-            dst[2 * k + 1] = _mm256_unpackhi_epi64(b[k], b[k + 4]);
-        }
-    }
-    for (auto l = 0u; l < 8 && l < queries; l++) {
-        v_vec_store(out[l], _mm256_permute2x128_si256(y[l], y[8 + l], 0x20));
-    }
-    for (auto l = 8u; l < queries; l++) {
-        v_vec_store(out[l], _mm256_permute2x128_si256(y[l - 8], y[l], 0x31));
-    }
+    v_transpose16x16(by_target, out, queries);
 }
 
 /* M and Iy for one column, sixteen queries at a time, and the column's
@@ -203,7 +175,7 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
     /* A row is wanted where it clears the threshold or improves on the query's
        best, which is one comparison against the smaller of the two. The best only
        rises, and only where a row was wanted, so this rises with it. */
-    __m256i gate = _mm256_min_epi16(running_max.score, v_threshold);
+    __m256i gate = v_min<std::int16_t>(running_max.score, v_threshold);
 
     for (auto j = 2u; j <= n; j++) {
         const auto target_current = target_sequence[n - j];
@@ -291,27 +263,23 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
             kDefer ? v_add<std::int16_t>(row_max, v_vec_load(profile.close_max(target_current)))
                    : row_max;
 
-        if (!kDefer || _mm256_movemask_epi8(_mm256_cmpgt_epi16(bound, gate)) != 0) {
+        if (!kDefer || v_any(v_greater_than<std::int16_t>(bound, gate))) {
             const __m256i exact = kDefer ? row_max_exact(m_cur, T, m) : row_max;
-            const __m256i improved = _mm256_cmpgt_epi16(exact, running_max.score);
-            const __m256i wanted = _mm256_cmpgt_epi16(exact, gate);
-            const __m256i row_pos =
-                _mm256_movemask_epi8(wanted) != 0 ? row_max_position(m_cur, T, m, exact) : one;
+            const __m256i improved = v_greater_than<std::int16_t>(exact, running_max.score);
+            const __m256i wanted = v_greater_than<std::int16_t>(exact, gate);
+            const __m256i row_pos = v_any(wanted) ? row_max_position(m_cur, T, m, exact) : one;
 
             v_vec_store(hs16 + (j - 1) * queries, exact);
             v_vec_store(hp16 + (j - 1) * queries, row_pos);
 
             running_max.score = v_max<std::int16_t>(running_max.score, exact);
-            gate = _mm256_min_epi16(running_max.score, v_threshold);
-            running_max.pos_i = _mm256_blendv_epi8(running_max.pos_i, row_pos, improved);
+            gate = v_min<std::int16_t>(running_max.score, v_threshold);
+            running_max.pos_i = v_select(running_max.pos_i, row_pos, improved);
             /* The row number does not fit a short, so the sixteen query mask is
                widened to two eight wide ones to select it. */
-            const __m256i v_j = _mm256_set1_epi32(static_cast<int>(j));
-            running_max.pos_j_lo = _mm256_blendv_epi8(
-                running_max.pos_j_lo, v_j, _mm256_cvtepi16_epi32(_mm256_castsi256_si128(improved)));
-            running_max.pos_j_hi =
-                _mm256_blendv_epi8(running_max.pos_j_hi, v_j,
-                                   _mm256_cvtepi16_epi32(_mm256_extracti128_si256(improved, 1)));
+            const __m256i v_j = v_int_to_avx2<std::int32_t>(static_cast<std::int32_t>(j));
+            running_max.pos_j_lo = v_select(running_max.pos_j_lo, v_j, v_widen_low(improved));
+            running_max.pos_j_hi = v_select(running_max.pos_j_hi, v_j, v_widen_high(improved));
         } else {
             /* The position is read only where a row reported, and such a row went
                the other way, so this one's is left as it lies. */

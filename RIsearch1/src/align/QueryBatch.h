@@ -326,10 +326,8 @@ private:
 
         for (auto j = 0; j < n; j++) {
             const __m256i v = v_vec_load(m_hs16.get() + static_cast<std::size_t>(j) * kQueries);
-            const __m256i gt = _mm256_cmpgt_epi16(v, thr);
-            /* Sixteen sign bits, one per query, out of a sixteen lane compare. */
-            auto bits = static_cast<unsigned>(_mm_movemask_epi8(
-                _mm_packs_epi16(_mm256_castsi256_si128(gt), _mm256_extracti128_si256(gt, 1))));
+            /* One bit per query, out of a sixteen lane compare. */
+            auto bits = v_lane_bits16(v_greater_than<std::int16_t>(v, thr));
             while (bits) {
                 const auto q = static_cast<unsigned>(__builtin_ctz(bits));
                 bits &= bits - 1;
@@ -380,8 +378,8 @@ private:
         BatchedRunningMax best;
         best.score = v_vec_load(first_score);
         best.pos_i = v_vec_load(first_pos);
-        best.pos_j_lo = _mm256_set1_epi32(1);
-        best.pos_j_hi = _mm256_set1_epi32(1);
+        best.pos_j_lo = v_int_to_avx2<std::int32_t>(1);
+        best.pos_j_hi = v_int_to_avx2<std::int32_t>(1);
 
         const auto stride = static_cast<std::size_t>(m_profile.m() + 1) * kQueries;
         std::int16_t* const M[2] = {m_m_rows.get(), m_m_rows.get() + stride};
@@ -402,8 +400,8 @@ private:
 
         v_vec_store(m_best_score, best.score);
         v_vec_store(m_best_i, best.pos_i);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(m_best_j), best.pos_j_lo);
-        _mm256_storeu_si256(reinterpret_cast<__m256i*>(m_best_j + 8), best.pos_j_hi);
+        v_vec_store(m_best_j, best.pos_j_lo);
+        v_vec_store(m_best_j + 8, best.pos_j_hi);
     }
 #endif
 

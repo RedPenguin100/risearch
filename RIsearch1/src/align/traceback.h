@@ -260,7 +260,7 @@ ris_fill_avx2(ReversedSequence target_seq, int m, int n, int_type** M, int_type*
     }
 
     const auto qp_first = q_offset + 1;
-    const __m256i zero = _mm256_setzero_si256();
+    const __m256i zero = v_zero_to_avx2();
 
     for (auto j = 2; j <= n; j++) {
         const auto t =

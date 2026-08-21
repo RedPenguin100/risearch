@@ -67,6 +67,15 @@ __attribute__((target("avx2"), always_inline)) inline __m256i v_shifted_left_one
                                                                                  __m256i cur);
 template<typename int_type>
 __attribute__((target("avx2"), always_inline)) inline __m256i v_broadcast_last(__m256i v);
+/* Lanewise comparisons and the select they feed. Only the sixteen-lane forms
+   are spelled out: the batched sweep is the only kernel that compares, and it
+   is int16 by construction. */
+template<typename int_type>
+__attribute__((target("avx2"), always_inline)) inline __m256i v_greater_than(__m256i a, __m256i b);
+template<typename int_type>
+__attribute__((target("avx2"), always_inline)) inline __m256i v_equals(__m256i a, __m256i b);
+template<typename int_type>
+__attribute__((target("avx2"), always_inline)) inline __m256i v_min(__m256i a, __m256i b);
 
 template<typename int_type>
 constexpr unsigned v_lanes()
@@ -294,6 +303,108 @@ v_broadcast_last<std::int16_t>(__m256i v)
     const __m128i last = _mm_shuffle_epi8(
         high, _mm_setr_epi8(14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15));
     return _mm256_broadcastsi128_si256(last);
+}
+
+template<>
+__attribute__((target("avx2"), always_inline)) inline __m256i
+v_greater_than<std::int16_t>(__m256i a, __m256i b)
+{
+    return _mm256_cmpgt_epi16(a, b);
+}
+
+template<>
+__attribute__((target("avx2"), always_inline)) inline __m256i v_equals<std::int16_t>(__m256i a,
+                                                                                     __m256i b)
+{
+    return _mm256_cmpeq_epi16(a, b);
+}
+
+template<>
+__attribute__((target("avx2"), always_inline)) inline __m256i v_min<std::int16_t>(__m256i a,
+                                                                                  __m256i b)
+{
+    return _mm256_min_epi16(a, b);
+}
+
+
+/* Reading a comparison's answer. A comparison sets every bit of a lane it holds
+   in and clears every bit of one it does not, which is what all three of these
+   take as their input. */
+
+/* Per lane, `mask ? if_set : if_clear`: if_set where the mask holds, if_clear
+   where it does not. */
+__attribute__((target("avx2"), always_inline)) inline __m256i v_select(__m256i if_clear,
+                                                                       __m256i if_set, __m256i mask)
+{
+    return _mm256_blendv_epi8(if_clear, if_set, mask);
+}
+
+/* Whether the mask holds in any lane. */
+__attribute__((target("avx2"), always_inline)) inline bool v_any(__m256i mask)
+{
+    return _mm256_movemask_epi8(mask) != 0;
+}
+
+/* One bit per lane of a sixteen-lane mask, lane 0 in the lowest bit. packs
+   narrows each lane to the byte movemask reads, which is why sixteen lanes come
+   back as sixteen bits rather than the thirty-two a byte mask would give. */
+__attribute__((target("avx2"), always_inline)) inline unsigned v_lane_bits16(__m256i mask)
+{
+    return static_cast<unsigned>(_mm_movemask_epi8(
+        _mm_packs_epi16(_mm256_castsi256_si128(mask), _mm256_extracti128_si256(mask, 1))));
+}
+
+/* The low and the high eight lanes of a sixteen-lane mask, each widened to eight
+   32-bit lanes -- which is what selecting a value too wide for a short needs. */
+__attribute__((target("avx2"), always_inline)) inline __m256i v_widen_low(__m256i mask)
+{
+    return _mm256_cvtepi16_epi32(_mm256_castsi256_si128(mask));
+}
+
+__attribute__((target("avx2"), always_inline)) inline __m256i v_widen_high(__m256i mask)
+{
+    return _mm256_cvtepi16_epi32(_mm256_extracti128_si256(mask, 1));
+}
+
+
+/* Sixteen registers of sixteen shorts, transposed: out[l] receives lane l of
+ * each of the sixteen inputs, in order.
+ *
+ * unpack works inside each 128-bit half, so the eight by eight pattern over
+ * rows 0..7 transposes both halves at once and a permute puts the results
+ * together. rows says how many of the sixteen outputs are wanted.
+ */
+__attribute__((target("avx2"), always_inline)) inline void
+v_transpose16x16(const std::int16_t* in, std::int16_t* const* out, unsigned rows)
+{
+    __m256i y[16];
+    for (auto half = 0u; half < 2; half++) {
+        const std::int16_t* const src = in + half * 8 * 16;
+        __m256i a[8];
+        for (auto k = 0u; k < 4; k++) {
+            const __m256i x0 = v_vec_load(src + (2 * k) * 16);
+            const __m256i x1 = v_vec_load(src + (2 * k + 1) * 16);
+            a[2 * k] = _mm256_unpacklo_epi16(x0, x1);
+            a[2 * k + 1] = _mm256_unpackhi_epi16(x0, x1);
+        }
+        __m256i b[8];
+        for (auto k = 0u; k < 4; k++) {
+            const auto from = (k / 2) * 4 + (k % 2);
+            b[2 * k] = _mm256_unpacklo_epi32(a[from], a[from + 2]);
+            b[2 * k + 1] = _mm256_unpackhi_epi32(a[from], a[from + 2]);
+        }
+        __m256i* const dst = y + half * 8;
+        for (auto k = 0u; k < 4; k++) {
+            dst[2 * k] = _mm256_unpacklo_epi64(b[k], b[k + 4]);
+            dst[2 * k + 1] = _mm256_unpackhi_epi64(b[k], b[k + 4]);
+        }
+    }
+    for (auto l = 0u; l < 8 && l < rows; l++) {
+        v_vec_store(out[l], _mm256_permute2x128_si256(y[l], y[8 + l], 0x20));
+    }
+    for (auto l = 8u; l < rows; l++) {
+        v_vec_store(out[l], _mm256_permute2x128_si256(y[l - 8], y[l], 0x31));
+    }
 }
 
 #endif /* RISEARCH1_HAS_AVX2 */

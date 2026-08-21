@@ -1,8 +1,7 @@
 #pragma once
 
-#include <cstdint>
-
 #include <climits>
+#include <cstdint>
 #include <cstdlib>
 
 /* The AVX2 operations the kernels are written in.
@@ -77,7 +76,8 @@ constexpr unsigned v_lanes()
 
 /* One value in every lane. */
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_int_to_avx2<std::int32_t>(std::int32_t v)
+__attribute__((target("avx2"), always_inline)) inline __m256i
+v_int_to_avx2<std::int32_t>(std::int32_t v)
 {
     return _mm256_set1_epi32(v);
 }

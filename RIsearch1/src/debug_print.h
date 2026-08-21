@@ -6,7 +6,8 @@
 #include "nucleotide.h"
 
 
-[[maybe_unused]] static void printMat(int** mat, int rows, int cols, const unsigned char* seq1, const unsigned char* seq2)
+[[maybe_unused]] static void printMat(int** mat, int rows, int cols, const unsigned char* seq1,
+                                      const unsigned char* seq2)
 {
     int i, j;
     printf("\t-");
@@ -22,7 +23,8 @@
     printf("\n\n");
 }
 
-[[maybe_unused]] static void printfloatMat(float** mat, int rows, int cols, const unsigned char* seq1, const unsigned char* seq2)
+[[maybe_unused]] static void printfloatMat(float** mat, int rows, int cols,
+                                           const unsigned char* seq1, const unsigned char* seq2)
 {
     int i, j;
     printf("\t-");
@@ -32,7 +34,8 @@
     for (i = 0; i < rows; i++) {
         printf("\n%c", (i == 0 ? '-' : index2nt(*(seq1 + i - 1))));
         for (j = 0; j < cols; j++) {
-            printf("\t%f", static_cast<double>(mat[i][j] == NEGINF ? -8 : mat[i][j])); /* -8 as dummy for -inf */
+            printf("\t%f", static_cast<double>(
+                               mat[i][j] == NEGINF ? -8 : mat[i][j])); /* -8 as dummy for -inf */
         }
     }
     printf("\n\n");

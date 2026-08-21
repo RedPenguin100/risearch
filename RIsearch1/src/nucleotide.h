@@ -1,10 +1,9 @@
 #pragma once
 
-#include <climits>
 #include <cctype>
-#include <cstdio>
-
+#include <climits>
 #include <cstdint>
+#include <cstdio>
 
 #include "memory/ByteBuffer.hpp"
 
@@ -101,7 +100,6 @@ inline bool seq2ix(std::uint32_t len, const char* seq, ByteBuffer& retIx, const 
     retIx.reserve(len);
 
     for (auto i = 0u; i < len; i++) {
-
         // kSeqCodes.code[..] is a faster way to access nucleotides than a switch
         const auto code = kSeqCodes.code[static_cast<unsigned char>(seq[i])];
         if (code != kSeqCodeOther) {

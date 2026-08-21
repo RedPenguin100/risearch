@@ -47,10 +47,10 @@ inline void getMat(const char* matname, short* dsm, short extension_penalty, int
     const short* base = find_dsm(matname);
     if (!base) {
         fprintf(stderr,
-          "Undefined matrix (%s), -m needs to be set to either t99 or t04 for RNA-RNA "
-          "interaction, su95 or su95_noGU for RNA-DNA interaction or slh04_noGU for DNA "
-          "interaction\n",
-          matname);
+                "Undefined matrix (%s), -m needs to be set to either t99 or t04 for RNA-RNA "
+                "interaction, su95 or su95_noGU for RNA-DNA interaction or slh04_noGU for DNA "
+                "interaction\n",
+                matname);
         exit(1);
     }
 
@@ -59,7 +59,6 @@ inline void getMat(const char* matname, short* dsm, short extension_penalty, int
         for (auto q_cur = 0u; q_cur < DSM_SIDE; q_cur++) {
             for (auto t_prev = 0u; t_prev < DSM_SIDE; t_prev++) {
                 for (auto t_cur = 0u; t_cur < DSM_SIDE; t_cur++) {
-
                     const auto src =
                         ((q_prev * DSM_SIDE + q_cur) * DSM_SIDE + t_prev) * DSM_SIDE + t_cur;
 
@@ -73,7 +72,6 @@ inline void getMat(const char* matname, short* dsm, short extension_penalty, int
             }
         }
     }
-
 }
 
 

@@ -134,9 +134,8 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int
 template<typename int_type>
 __attribute__((target("avx2"), always_inline)) static inline __m256i
 main_dp_loop_avx2(unsigned i, const typename QueryProfile<int_type>::RowView& T, int_type* m_cur,
-                  int_type* iy_cur,
-                  const int_type* m_last, const int_type* ix_last, const int_type* iy_last,
-                  __m256i v_iy_ext, __m256i* v_row_max)
+                  int_type* iy_cur, const int_type* m_last, const int_type* ix_last,
+                  const int_type* iy_last, __m256i v_iy_ext, __m256i* v_row_max)
 {
     /* For each column this block writes, its diagonal predecessor: one target
        position back and one query position back. Adjacent because the columns
@@ -159,12 +158,13 @@ main_dp_loop_avx2(unsigned i, const typename QueryProfile<int_type>::RowView& T,
     v_vec_store<int_type>(m_cur + i, m_new);
 
     // Set max now, position is recovered later
-    *v_row_max = v_max<int_type>(*v_row_max,
-                                 v_add<int_type>(m_new, v_vec_load<int_type>(T.close + i)));
+    *v_row_max =
+        v_max<int_type>(*v_row_max, v_add<int_type>(m_new, v_vec_load<int_type>(T.close + i)));
 
     // Iy: target nt against a gap. Predecessors are vertical -- previous row,
     // same column -- so no -1 on the address, unlike M's diagonal above.
-    v_vec_store<int_type>(iy_cur + i, v_max<int_type>(
+    v_vec_store<int_type>(iy_cur + i,
+                          v_max<int_type>(
                               /* pair at previous row, now bulge */
                               v_add<int_type>(v_vec_load<int_type>(m_last + i),
                                               v_vec_load<int_type>(T.iy_from_m + i)),
@@ -270,23 +270,19 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
         constexpr auto kBlock = v_lanes<int_type>();
         auto start = 2u;
         for (; start + kBlock - 1 <= m; start += kBlock) {
-            const __m256i m_block = main_dp_loop_avx2<int_type>(start, T, m_cur, iy_cur, m_last,
-                                                                ix_last,
-                                                      iy_last, v_iy_ext, &v_row_max);
+            const __m256i m_block = main_dp_loop_avx2<int_type>(
+                start, T, m_cur, iy_cur, m_last, ix_last, iy_last, v_iy_ext, &v_row_max);
             // The separate ix loop in a separate function
-            v_ix_carry =
-                ix_dp_loop_avx2<int_type>(ix_cur + start, T.ix_from_m_scan + start,
-                                          T.ix_prefix + start,
-                                v_shifted_left_one<int_type>(m_left, m_block), v_ix_carry);
+            v_ix_carry = ix_dp_loop_avx2<int_type>(
+                ix_cur + start, T.ix_from_m_scan + start, T.ix_prefix + start,
+                v_shifted_left_one<int_type>(m_left, m_block), v_ix_carry);
             m_left = m_block;
         }
 
         // Fewer than a block's columns need special case for main DP
         if (start <= m) {
             main_dp_loop_avx2<int_type>(m - (kBlock - 1), T, m_cur, iy_cur, m_last, ix_last,
-                                        iy_last,
-                              v_iy_ext,
-                              &v_row_max);
+                                        iy_last, v_iy_ext, &v_row_max);
         }
         row_max = v_hmax<int_type>(v_row_max);
 
@@ -324,8 +320,6 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
 #endif /* RISEARCH1_HAS_AVX2 */
 
 
-
-
 /* The entry point the alignment calls. Inlined for the same reason
    score_target_scalar is. */
 template<typename int_type>
@@ -344,7 +338,7 @@ score_target(const unsigned char* target_sequence, const QueryProfile<int_type>&
     // Only use AVX2 if the CPU supports
     if (CPU_HAS_AVX2) {
         score_target_avx2<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
-                               running_max);
+                                    running_max);
         return;
     }
 #endif

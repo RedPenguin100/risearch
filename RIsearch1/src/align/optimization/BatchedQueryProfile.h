@@ -207,8 +207,8 @@ public:
         {
             const std::int16_t* const p = pair + i * kPairGroup;
             const std::int16_t* const s = solo + i * kSoloGroup;
-            return {p + kMFromM * kLanes,   s + kMFromIx * kLanes, p + kMFromIy * kLanes,
-                    s + kMOpen * kLanes,    s + kClose * kLanes,   p + kIyFromM * kLanes};
+            return {p + kMFromM * kLanes, s + kMFromIx * kLanes, p + kMFromIy * kLanes,
+                    s + kMOpen * kLanes,  s + kClose * kLanes,   p + kIyFromM * kLanes};
         }
     };
 

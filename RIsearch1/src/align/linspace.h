@@ -1,19 +1,18 @@
 #pragma once
 
-#include <cstdint>
-
 #include <climits>
+#include <cstdint>
 #include <cstdio>
 
 #include "HitReporter.h"
 #include "RunningMax.h"
-#include "align/optimization/QueryProfile.h"
 #include "align/ScoreTarget.h"
+#include "align/int16_safety.h"
+#include "align/optimization/QueryProfile.h"
 #include "cli/cli.h"
 #include "energy.hpp"
 #include "memory/ByteBuffer.hpp"
 #include "memory/MallocRAII.hpp"
-#include "align/int16_safety.h"
 #include "nucleotide.h"
 #include "operations.h"
 
@@ -137,8 +136,7 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
 
     const QueryProfile<std::int32_t> wide_profile(query_sequence, m, dsm, has_positive_gap(dsm));
     HitReporter<std::int32_t> reporter(query_sequence, target_sequence, n, dsm, wide_profile,
-                                       config,
-                                       qname, tname);
+                                       config, qname, tname);
 
     reporter.report_sweep(hs, hp, threshold, running_max);
 }

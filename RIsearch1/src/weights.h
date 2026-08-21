@@ -4,6 +4,8 @@
 
 /*Weights vector must have size = length of target -1*/
 
+/* One weight per line, so a position in the vector is a line of the file. */
+// clang-format off
 constexpr float wC20_5p_3p[19] = {
     1.80067099242007,
     1.95666668400006,
@@ -25,6 +27,7 @@ constexpr float wC20_5p_3p[19] = {
     2.04277109036766,
     2.24911493451185
 };
+// clang-format on
 constexpr std::size_t size_wC20_5p_3p = 19;
 
 /*float test[4] = {1.0, 2.0, 3.0, 4.0};

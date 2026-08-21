@@ -42,12 +42,11 @@ public:
 
     QueryProfile(const unsigned char* query_sequence, std::uint32_t m, short dsm[6][6][6][6],
                  bool has_positive_gap)
-        : m_length(m), m_stride(m + 1 + kBlockSlack),
-          m_m_from_m(kContexts * m_stride), m_m_from_ix(kContexts * m_stride),
-          m_m_from_iy(kContexts * m_stride), m_m_open(kContexts * m_stride),
-          m_close(kContexts * m_stride), m_iy_from_m(kContexts * m_stride),
-          m_ix_from_m(kContexts * m_stride), m_ix_extend(m_stride),
-          m_ix_from_m_scan(kContexts * m_stride), m_ix_prefix(m_stride),
+        : m_length(m), m_stride(m + 1 + kBlockSlack), m_m_from_m(kContexts * m_stride),
+          m_m_from_ix(kContexts * m_stride), m_m_from_iy(kContexts * m_stride),
+          m_m_open(kContexts * m_stride), m_close(kContexts * m_stride),
+          m_iy_from_m(kContexts * m_stride), m_ix_from_m(kContexts * m_stride),
+          m_ix_extend(m_stride), m_ix_from_m_scan(kContexts * m_stride), m_ix_prefix(m_stride),
           m_has_positive_gap(has_positive_gap)
     {
         /* A block that starts on a query position reads a whole register from
@@ -111,8 +110,7 @@ public:
                     m_close[off + i] = dsm[q_cur][GAP][t_cur][GAP];
                     m_iy_from_m[off + i] = dsm[q_cur][GAP][t_prev][t_cur];
                     m_ix_from_m[off + i] = dsm[q_prev][q_cur][t_cur][GAP];
-                    m_ix_from_m_scan[off + i] =
-                        m_ix_from_m[off + i] - m_ix_prefix[i];
+                    m_ix_from_m_scan[off + i] = m_ix_from_m[off + i] - m_ix_prefix[i];
                 }
             }
         }
@@ -146,8 +144,7 @@ public:
         const auto off = m_offsets[ctx];
         return {m_m_from_m.get() + off,  m_m_from_ix.get() + off, m_m_from_iy.get() + off,
                 m_m_open.get() + off,    m_close.get() + off,     m_iy_from_m.get() + off,
-                m_ix_from_m.get() + off, m_ix_extend.get(),
-                m_ix_from_m_scan.get() + off,
+                m_ix_from_m.get() + off, m_ix_extend.get(),       m_ix_from_m_scan.get() + off,
                 m_ix_prefix.get(),       m_iy_extend[ctx]};
     }
 

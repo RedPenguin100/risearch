@@ -2,8 +2,8 @@
 
 #include <cstdint>
 
-#include "matrix_operations.h"
 #include "align/int16_safety.h"
+#include "matrix_operations.h"
 #include "nucleotide.h" /* NEGINF */
 
 
@@ -50,9 +50,18 @@ public:
     MatrixStore(const MatrixStore&) = delete;
     MatrixStore& operator=(const MatrixStore&) = delete;
 
-    int_type** M() const { return m_M; }
-    int_type** Ix() const { return m_Ix; }
-    int_type** Iy() const { return m_Iy; }
+    int_type** M() const
+    {
+        return m_M;
+    }
+    int_type** Ix() const
+    {
+        return m_Ix;
+    }
+    int_type** Iy() const
+    {
+        return m_Iy;
+    }
 
 private:
     int_type** m_M;

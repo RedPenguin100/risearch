@@ -1,4 +1,5 @@
 #include "Matrix.h"
+
 #include "matrix_operations.h"
 
 MatrixInt::MatrixInt(std::uint32_t rows, std::uint32_t cols)

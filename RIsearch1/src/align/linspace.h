@@ -135,8 +135,8 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
 
 
     const QueryProfile<std::int32_t> wide_profile(query_sequence, m, dsm, has_positive_gap(dsm));
-    HitReporter<std::int32_t> reporter(query_sequence, target_sequence, n, dsm, wide_profile,
-                                       config, qname, tname);
+    HitReporter reporter(query_sequence, target_sequence, n, dsm, wide_profile, config, qname,
+                         tname);
 
     reporter.report_sweep(hs, hp, threshold, running_max);
 }

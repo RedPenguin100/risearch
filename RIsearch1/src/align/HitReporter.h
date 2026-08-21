@@ -30,11 +30,10 @@
  * once per query/target pair and reused for every hit -- there may be hundreds
  * of thousands of them.
  */
-template<typename int_type>
 class HitReporter {
 public:
     HitReporter(const unsigned char* query, const unsigned char* target, std::uint32_t n,
-                short dsm[6][6][6][6], const QueryProfile<int_type>& profile,
+                short dsm[6][6][6][6], const QueryProfile<std::int32_t>& profile,
                 const config_st& config, const char* qname, const char* tname)
         : m_query(query), m_target(target), m_n(n), m_dsm(dsm), m_profile(profile),
           m_config(config), m_qname(qname), m_tname(tname),
@@ -53,9 +52,8 @@ public:
     {
         const auto w = extract(pos_i, pos_j);
 
-        RIs<int_type>(m_query + w.qbeg - 1, w.target, w.qlen, w.tlen, &m_hit, m_config,
-                      m_matrices.M(), m_matrices.Ix(), m_matrices.Iy(), m_profile, w.qbeg - 1,
-                      m_best.get());
+        RIs(m_query + w.qbeg - 1, w.target, w.qlen, w.tlen, &m_hit, m_config, m_matrices.M(),
+            m_matrices.Ix(), m_matrices.Iy(), m_profile, w.qbeg - 1, m_best.get());
 
         const auto energy =
             static_cast<double>(m_hit.max + m_config.extension_penalty * m_hit.nucleotide_count() -
@@ -260,16 +258,16 @@ private:
     const unsigned char* m_target;
     std::uint32_t m_n;
     short (*m_dsm)[6][6][6];
-    const QueryProfile<int_type>& m_profile;
+    const QueryProfile<std::int32_t>& m_profile;
     const config_st& m_config;
     const char* m_qname;
     const char* m_tname;
     float m_reference;
 
     /* Scratch, reused across every hit. */
-    MatrixStore<int_type> m_matrices;
+    MatrixStore m_matrices;
     /* Best M + close per query column; transpose_best_cell reads it. */
-    MallocRAII<int_type> m_best;
+    MallocRAII<std::int32_t> m_best;
     IA m_hit;
 
     std::size_t m_line_fixed;

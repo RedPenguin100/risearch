@@ -18,9 +18,7 @@
 #include "weights.h"
 
 static void fill_char_array(char *buf, std::uint32_t length) {
-    for (auto i = 0u; i < length; i++) {
-        buf[i] = 'X';
-    }
+    std::memset(buf, 'X', length);
     buf[length] = '\0';
 }
 

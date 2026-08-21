@@ -50,12 +50,11 @@ __attribute__((target("avx2"), always_inline)) static inline __m256i
 row_max_exact(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& T, unsigned m)
 {
     constexpr auto queries = BatchedQueryProfile::kLanes;
-    __m256i row_max = v_add<std::int16_t>(v_vec_load(m_cur + queries),
-                                          v_vec_load(T.column(1).close));
+    __m256i row_max =
+        v_add<std::int16_t>(v_vec_load(m_cur + queries), v_vec_load(T.column(1).close));
     for (auto i = 2u; i <= m; i++) {
-        row_max = _mm256_max_epi16(row_max,
-                                   v_add<std::int16_t>(v_vec_load(m_cur + i * queries),
-                                                       v_vec_load(T.column(i).close)));
+        row_max = v_max<std::int16_t>(row_max, v_add<std::int16_t>(v_vec_load(m_cur + i * queries),
+                                                                   v_vec_load(T.column(i).close)));
     }
     return row_max;
 }
@@ -69,11 +68,11 @@ row_max_position(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& 
                  __m256i row_max)
 {
     constexpr auto queries = BatchedQueryProfile::kLanes;
-    __m256i pos = _mm256_set1_epi16(1);
+    __m256i pos = v_int_to_avx2<std::int16_t>(1);
     for (auto i = m; i >= 1; i--) {
-        const __m256i candidate = v_add<std::int16_t>(v_vec_load(m_cur + i * queries),
-                                                      v_vec_load(T.column(i).close));
-        pos = _mm256_blendv_epi8(pos, _mm256_set1_epi16(static_cast<std::int16_t>(i)),
+        const __m256i candidate =
+            v_add<std::int16_t>(v_vec_load(m_cur + i * queries), v_vec_load(T.column(i).close));
+        pos = _mm256_blendv_epi8(pos, v_int_to_avx2<std::int16_t>(i),
                                  _mm256_cmpeq_epi16(candidate, row_max));
     }
     return pos;
@@ -88,8 +87,7 @@ row_max_position(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& 
  * pattern over rows 0..7 transposes both halves at once and a permute puts the
  * results together. out[l] receives target positions 0..15 of query l. */
 __attribute__((target("avx2"), always_inline)) static inline void
-transpose_to_queries(const std::int16_t* by_target, std::int16_t* const* out,
-                     unsigned queries)
+transpose_to_queries(const std::int16_t* by_target, std::int16_t* const* out, unsigned queries)
 {
     __m256i y[16];
     for (auto half = 0u; half < 2; half++) {
@@ -131,29 +129,29 @@ main_dp_column_batched(const BatchedQueryProfile::ColumnTerms& t, __m256i m_last
                        __m256i ix_scan, __m256i iy_ext, std::int16_t* m_out, std::int16_t* iy_out,
                        __m256i* row_max)
 {
-    const __m256i zero = _mm256_setzero_si256();
+    const __m256i m_new = v_max4<std::int16_t>(
+        /* coming from a match, and its M[lastRow][i-1] != 0 test */
+        v_add_unless_zero_or_neg1<std::int16_t>(m_last_prev, v_vec_load(t.m_from_m)),
+        /* coming from gap in target, as the row above's scan left it */
+        v_add<std::int16_t>(ix_scan, v_vec_load(t.m_from_ix)),
+        /* coming from gap in query */
+        v_add<std::int16_t>(iy_last_prev, v_vec_load(t.m_from_iy)),
+        /* start fresh */
+        v_vec_load(t.m_open));
 
-    /* Assign M with a 4-way max. */
-    const __m256i m_new = _mm256_max_epi16(
-        _mm256_max_epi16(
-            /* coming from a match, and its M[lastRow][i-1] != 0 test */
-            _mm256_blendv_epi8(v_add<std::int16_t>(m_last_prev, v_vec_load(t.m_from_m)),
-                               _mm256_set1_epi16(-1), _mm256_cmpeq_epi16(m_last_prev, zero)),
-            /* coming from gap in target, as the row above's scan left it */
-            v_add<std::int16_t>(ix_scan, v_vec_load(t.m_from_ix))),
-        _mm256_max_epi16(
-            /* coming from gap in query */
-            v_add<std::int16_t>(iy_last_prev, v_vec_load(t.m_from_iy)),
-            /* start fresh */
-            v_vec_load(t.m_open)));
     v_vec_store(m_out, m_new);
 
-    *row_max = _mm256_max_epi16(*row_max,
-                                kDefer ? m_new : v_add<std::int16_t>(m_new, v_vec_load(t.close)));
+    // set max now, position is recovered later.
+    *row_max = v_max<std::int16_t>(
+        *row_max, kDefer ? m_new : v_add<std::int16_t>(m_new, v_vec_load(t.close)));
 
-    /* Iy's predecessors are vertical: previous target position, same column. */
-    v_vec_store(iy_out, _mm256_max_epi16(v_add<std::int16_t>(m_last_here, v_vec_load(t.iy_from_m)),
-                                         v_add<std::int16_t>(iy_last_here, iy_ext)));
+    // Iy: target nt against a gap. Predecessors are vertical -- previous row,
+    // same column -- so no -1 on the address, unlike M's diagonal above.
+    v_vec_store(iy_out, v_max<std::int16_t>(
+                            /* pair at previous row, now bulge */
+                            v_add<std::int16_t>(m_last_here, v_vec_load(t.iy_from_m)),
+                            /* already bulging, add one more */
+                            v_add<std::int16_t>(iy_last_here, iy_ext)));
 }
 
 /* M and Iy hold two target positions each, as they do in the single query sweep.
@@ -193,13 +191,13 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
     std::int16_t* iy_cur = Iy[0];
     std::int16_t* iy_last = Iy[1];
 
-    const __m256i zero = _mm256_setzero_si256();
-    const __m256i one = _mm256_set1_epi16(1);
+    const __m256i zero = v_zero_to_avx2();
+    const __m256i one = v_int_to_avx2<std::int16_t>(1);
 
     /* A row's position only has to be right where it is read, which is where the
        row max clears the threshold or improves on the query's best so far -- the
        same test the single query kernels defer their position scan behind. */
-    const __m256i v_threshold = _mm256_set1_epi16(static_cast<std::int16_t>(
+    const __m256i v_threshold = v_int_to_avx2<std::int16_t>(static_cast<std::int16_t>(
         threshold > SHRT_MAX ? SHRT_MAX : (threshold < SHRT_MIN ? SHRT_MIN : threshold)));
 
     /* A row is wanted where it clears the threshold or improves on the query's
@@ -213,7 +211,7 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
 
         const auto context = QueryProfile<std::int32_t>::context(target_prev, target_current);
         const auto T = profile.row(context, target_current);
-        const __m256i iy_ext = _mm256_set1_epi16(T.iy_extend);
+        const __m256i iy_ext = v_int_to_avx2<std::int16_t>(T.iy_extend);
 
         /* The run the row above's scan reads. Row 2's is the caller's; every
            later row's sits at the target nucleotide of the row above. */
@@ -226,7 +224,7 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
         const auto t1 = T.column(1);
 
         /* Column 1 is the query's first nt, nothing can precede it. */
-        const __m256i m_col1 = _mm256_max_epi16(zero, v_vec_load(t1.m_open));
+        const __m256i m_col1 = v_max<std::int16_t>(zero, v_vec_load(t1.m_open));
         v_vec_store(m_cur + queries, m_col1);
 
         /* Deferring, this is a row max over M alone; the close each column owes
@@ -238,12 +236,12 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
 
         /* Iy bulges a target nt, j >= 2 so a bulge is possible. */
         v_vec_store(iy_cur + queries,
-                    _mm256_max_epi16(v_add<std::int16_t>(m_last_prev, v_vec_load(t1.iy_from_m)),
-                                     v_add<std::int16_t>(iy_last_prev, iy_ext)));
+                    v_max<std::int16_t>(v_add<std::int16_t>(m_last_prev, v_vec_load(t1.iy_from_m)),
+                                        v_add<std::int16_t>(iy_last_prev, iy_ext)));
 
         /* Ix[j-1][1] is unreachable, and carried that is what the row above's
            scan enters its first column with. */
-        __m256i ix_scan = _mm256_set1_epi16(NEG_INF_SHORT);
+        __m256i ix_scan = v_int_to_avx2<std::int16_t>(NEG_INF_SHORT);
 
         for (auto i = 2u; i < m; i++) {
             const auto off = i * queries;
@@ -253,13 +251,13 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
             const __m256i iy_last_here = v_vec_load(iy_last + off);
 
             main_dp_column_batched<kDefer>(T.column(i), m_last_prev, iy_last_prev, m_last_here,
-                                   iy_last_here, ix_scan, iy_ext, m_cur + off, iy_cur + off,
-                                   &row_max);
+                                           iy_last_here, ix_scan, iy_ext, m_cur + off, iy_cur + off,
+                                           &row_max);
 
             /* One step of the row above's Ix scan, a column behind this row so
                that column i is ready for column i + 1, where it is read. */
-            ix_scan = _mm256_max_epi16(ix_scan,
-                                       v_add<std::int16_t>(m_last_prev, v_vec_load(scan)));
+            ix_scan =
+                v_max<std::int16_t>(ix_scan, v_add<std::int16_t>(m_last_prev, v_vec_load(scan)));
 
             m_last_prev = m_last_here;
             iy_last_prev = iy_last_here;
@@ -273,17 +271,14 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
            reason. */
         if (m >= 2) {
             const auto t = T.column(m);
-            const __m256i m_new = _mm256_max_epi16(
-                _mm256_max_epi16(
-                    _mm256_blendv_epi8(v_add<std::int16_t>(m_last_prev, v_vec_load(t.m_from_m)),
-                                       _mm256_set1_epi16(-1),
-                                       _mm256_cmpeq_epi16(m_last_prev, zero)),
-                    v_add<std::int16_t>(ix_scan, v_vec_load(t.m_from_ix))),
-                _mm256_max_epi16(v_add<std::int16_t>(iy_last_prev, v_vec_load(t.m_from_iy)),
-                                 v_vec_load(t.m_open)));
+            const __m256i m_new = v_max4<std::int16_t>(
+                v_add_unless_zero_or_neg1<std::int16_t>(m_last_prev, v_vec_load(t.m_from_m)),
+                v_add<std::int16_t>(ix_scan, v_vec_load(t.m_from_ix)),
+                v_add<std::int16_t>(iy_last_prev, v_vec_load(t.m_from_iy)), v_vec_load(t.m_open));
+
             v_vec_store(m_cur + m * queries, m_new);
 
-            row_max = _mm256_max_epi16(
+            row_max = v_max<std::int16_t>(
                 row_max, kDefer ? m_new : v_add<std::int16_t>(m_new, v_vec_load(t.close)));
         }
 
@@ -300,14 +295,13 @@ score_target_batched(const unsigned char* target_sequence, const BatchedQueryPro
             const __m256i exact = kDefer ? row_max_exact(m_cur, T, m) : row_max;
             const __m256i improved = _mm256_cmpgt_epi16(exact, running_max.score);
             const __m256i wanted = _mm256_cmpgt_epi16(exact, gate);
-            const __m256i row_pos = _mm256_movemask_epi8(wanted) != 0
-                                        ? row_max_position(m_cur, T, m, exact)
-                                        : one;
+            const __m256i row_pos =
+                _mm256_movemask_epi8(wanted) != 0 ? row_max_position(m_cur, T, m, exact) : one;
 
             v_vec_store(hs16 + (j - 1) * queries, exact);
             v_vec_store(hp16 + (j - 1) * queries, row_pos);
 
-            running_max.score = _mm256_max_epi16(running_max.score, exact);
+            running_max.score = v_max<std::int16_t>(running_max.score, exact);
             gate = _mm256_min_epi16(running_max.score, v_threshold);
             running_max.pos_i = _mm256_blendv_epi8(running_max.pos_i, row_pos, improved);
             /* The row number does not fit a short, so the sixteen query mask is

@@ -60,7 +60,8 @@ public:
             const Entry& e = m_entries[k];
             if (config.printShort < 2) {
                 printf("\n\nquery %d: %s (%u nts) vs. target %d: %s (%u nts)\n\n", e.query_count,
-                       e.name.data(), e.len, target_count, tname, static_cast<std::uint32_t>(target_seq.size()));
+                       e.name.data(), e.len, target_count, tname,
+                       static_cast<std::uint32_t>(target_seq.size()));
             }
             if (swept) {
                 report_query(k, e, target_seq, dsm, tname, config);
@@ -155,13 +156,16 @@ private:
 
     void allocate_sweep_buffers(std::size_t m, std::size_t n)
     {
-        reserve<std::int16_t>(m_m_rows, m_m_rows_capacity, 2 * (m + 1) * kQueries);
-        reserve<std::int16_t>(m_iy_rows, m_iy_rows_capacity, 2 * (m + 1) * kQueries);
-        reserve<std::int16_t>(m_scan1, m_scan1_capacity, (m + 1) * kQueries);
-        reserve<std::int16_t>(m_hs16, m_hs16_capacity, n * kQueries);
-        reserve<std::int16_t>(m_hp16, m_hp16_capacity, n * kQueries);
-        reserve<std::int16_t>(m_hs, m_hs_capacity, n * kQueries);
-        reserve<std::int16_t>(m_hp, m_hp_capacity, n * kQueries);
+        const auto query_stride = (m + 1) * kQueries;
+        const auto target_stride = n * kQueries;
+
+        reserve<std::int16_t>(m_m_rows, m_m_rows_capacity, 2 * query_stride);
+        reserve<std::int16_t>(m_iy_rows, m_iy_rows_capacity, 2 * query_stride);
+        reserve<std::int16_t>(m_scan1, m_scan1_capacity, query_stride);
+        reserve<std::int16_t>(m_hs16, m_hs16_capacity, target_stride);
+        reserve<std::int16_t>(m_hp16, m_hp16_capacity, target_stride);
+        reserve<std::int16_t>(m_hs, m_hs_capacity, target_stride);
+        reserve<std::int16_t>(m_hp, m_hp_capacity, target_stride);
     }
 
     bool sweep_impl(const ByteBuffer& target_seq, short dsm[6][6][6][6], int threshold)
@@ -221,7 +225,7 @@ private:
                         std::int16_t* first_score, std::int16_t* first_pos)
     {
         const auto stride = static_cast<std::size_t>(m + 1) * kQueries;
-        std::int16_t* const m_row = m_m_rows.get() + stride;  /* the row read first */
+        std::int16_t* const m_row = m_m_rows.get() + stride; /* the row read first */
         std::int16_t* const iy_row = m_iy_rows.get() + stride;
         std::int16_t* const scan_row = m_scan1.get();
         const std::int16_t* const ix_prefix = m_profile.ix_prefix();
@@ -317,7 +321,7 @@ private:
         std::memset(m_clears.get(), 0, words * kQueries * sizeof(std::uint32_t));
 
 
-        const __m256i thr = _mm256_set1_epi16(static_cast<std::int16_t>(
+        const __m256i thr = v_int_to_avx2<std::int16_t>(static_cast<std::int16_t>(
             threshold > SHRT_MAX ? SHRT_MAX : (threshold < SHRT_MIN ? SHRT_MIN : threshold)));
 
         for (auto j = 0; j < n; j++) {
@@ -425,9 +429,8 @@ private:
             reporter.report_sweep(m_hs.get() + offset, m_hp.get() + offset, config.min_score,
                                   running_max);
         } else {
-            reporter.report_sweep_sparse(m_clears.get() + lane * m_clear_words,
-                                         m_hs16.get() + lane, m_hp16.get() + lane, kQueries,
-                                         running_max);
+            reporter.report_sweep_sparse(m_clears.get() + lane * m_clear_words, m_hs16.get() + lane,
+                                         m_hp16.get() + lane, kQueries, running_max);
         }
     }
 

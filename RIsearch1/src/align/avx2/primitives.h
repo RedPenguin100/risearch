@@ -77,7 +77,7 @@ constexpr unsigned v_lanes()
 
 /* One value in every lane. */
 template<>
-__attribute__((target("avx2"), always_inline)) inline __m256i v_int_to_avx2<std::int32_t>(int v)
+__attribute__((target("avx2"), always_inline)) inline __m256i v_int_to_avx2<std::int32_t>(std::int32_t v)
 {
     return _mm256_set1_epi32(v);
 }
@@ -208,6 +208,11 @@ __attribute__((target("avx2"), always_inline)) inline __m256i
 v_int_to_avx2<std::int16_t>(std::int16_t v)
 {
     return _mm256_set1_epi16(v);
+}
+
+__attribute__((target("avx2"), always_inline)) inline __m256i v_zero_to_avx2()
+{
+    return _mm256_setzero_si256();
 }
 
 /* adds instead of add, to saturate negative sums at NEG_INF_SHORT rather than

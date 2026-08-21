@@ -21,25 +21,26 @@
 
 ***********************************************************/
 
-#include <cstdio>
-#include <cstring>
-#include <cstdlib>
-#include <cstdint>
 #include <malloc.h>
 #include <unistd.h>
 
-
-#include "nucleotide.h"
-#include "dsm.h"
-#include "cli/cli.h"
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
 
 #include "FastaRAII.h"
 #include "FastaRecord.h"
 #include "align/QueryBatch.h"
 #include "align/dispatch.h"
+#include "cli/cli.h"
+#include "dsm.h"
+#include "nucleotide.h"
 
-
-int main(int argc, char* argv[])
+void tune_glibc_allocator()
 {
     /* Set the minimum amount of memory that gets given back to the OS, so a run
        page-faults less when it allocates and runs faster. This does not raise
@@ -54,166 +55,170 @@ int main(int argc, char* argv[])
     mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
     mallopt(M_MMAP_THRESHOLD, 64 * 1024 * 1024);
 #endif
+}
+
+/* One sequence ready to align. id is which record of its file the sequence was,
+   counting the ones seq2ix rejected, so a query keeps the number it is reported
+   under. A sequence given on the command line has no record, which is what id 0
+   says, and it is named from_cli. */
+struct SequenceItem {
+    std::string name;
+    ByteBuffer indices;
+    int id{0};
+};
+
+std::vector<SequenceItem> load_sequences_from_cli(const char* cli_str, const char* role)
+{
+    SequenceItem item;
+    item.name = "from_cli";
+    if (!seq2ix(static_cast<std::uint32_t>(std::strlen(cli_str)), cli_str, item.indices,
+                "from command line", role)) {
+        exit(-1); /* non-alpha char in input -- no other sequence to move on to */
+    }
+
+    if (item.indices.is_empty()) {
+        std::fprintf(stderr, "No %s seq in the one given on the command line\n", role);
+        exit(-1);
+    }
+
+    std::vector<SequenceItem> sequences;
+    sequences.push_back(std::move(item));
+    return sequences;
+}
+
+std::vector<SequenceItem> load_sequences_from_file(const char* file_path, const char* role)
+{
+    FastaRAII fasta_sequences(file_path);
+    if (!fasta_sequences.handle()) {
+        /* seq2ix names the role in lower case in its own messages; this one has
+           always begun with a capital. */
+        std::fprintf(stderr, "%c%s file %s is not readable\n",
+                     std::toupper(static_cast<unsigned char>(role[0])), role + 1, file_path);
+        exit(-1);
+    }
+
+    std::vector<SequenceItem> sequences;
+    FastaRecord seq_record;
+    int count = 0;
+    while (seq_record.read(fasta_sequences.handle())) {
+        count++;
+        ByteBuffer indices;
+        if (seq2ix(seq_record.get_size(), seq_record.get_sequence(), indices, seq_record.get_name(),
+                   role)) {
+            sequences.push_back({seq_record.get_name(), std::move(indices), count});
+        }
+    }
+
+    if (sequences.empty()) {
+        std::fprintf(stderr, "No %s seq in %s\n", role, file_path);
+        exit(-1);
+    }
+    return sequences;
+}
+
+std::vector<SequenceItem> load_sequences(const char* file_path, const char* cli_str,
+                                         const char* role)
+{
+    if (file_path) {
+        return load_sequences_from_file(file_path, role);
+    }
+
+    if (cli_str) {
+        return load_sequences_from_cli(cli_str, role);
+    }
+
+    /* getArgs refuses a run with no query or no target, so this is unreachable
+       -- alternative run seq against itself!? */
+    std::fprintf(stderr, "No %s seq given!", role);
+    exit(-1);
+}
+
+void print_header(const SequenceItem& query, const SequenceItem& target)
+{
+    /* Four spellings, one for each way the pair was given: a sequence from a
+       file prints its record number and its name, one from the command line
+       prints neither. */
+
+    const auto t_len = static_cast<std::uint32_t>(target.indices.size());
+    const auto q_len = static_cast<std::uint32_t>(query.indices.size());
+
+    if (query.id == 0 && target.id == 0) {
+        std::printf("\n\nquery from_cli (%u nts) vs. target from_cli (%u nts)\n\n", q_len, t_len);
+    } else if (query.id == 0) {
+        std::printf("\n\nquery from_cli (%u nts) vs. target %s (%u nts)\n\n", q_len,
+                    target.name.c_str(), t_len);
+    } else if (target.id == 0) {
+        std::printf("\n\nquery %s (%u nts) vs. target from_cli (%u nts)\n\n", query.name.c_str(),
+                    q_len, t_len);
+    } else {
+        std::printf("\n\nquery %d: %s (%u nts) vs. target %d: %s (%u nts)\n\n", query.id,
+                    query.name.c_str(), q_len, target.id, target.name.c_str(), t_len);
+    }
+}
+
+void process_target(const SequenceItem& target, const std::vector<SequenceItem>& queries,
+                    short (&dsm)[6][6][6][6], const config_st& config)
+{
+    const auto len_seq2 = static_cast<std::uint32_t>(target.indices.size());
+
+    /* Queries are swept together where the sweep is what runs. Only a file
+       holds enough queries to fill a batch's lanes, and only a file numbers the
+       records that pairing them off reads. */
+    const bool from_files = target.id != 0 && queries.front().id != 0;
+
+    // force start not supported for batching
+    const bool batching = from_files && !uses_force_start(config);
+
+    QueryBatch batch;
+
+    for (const auto& query : queries) {
+        /* Pairing a query with the target of the same number is only meaningful
+           where both are numbered. */
+        if (from_files && !config.all_vs_all && target.id != query.id) {
+            continue;
+        }
+        const auto len_seq1 = static_cast<std::uint32_t>(query.indices.size());
+
+        if (batching) {
+            batch.add(query.indices, query.name.c_str(), query.id, len_seq1);
+            if (batch.full()) {
+                batch.run(target.indices, dsm, target.name.c_str(), target.id, config);
+            }
+            continue;
+        }
+
+        if (config.printShort < 2) {
+            print_header(query, target);
+        }
+
+        run_alignment(query.indices, target.indices, dsm, query.name.c_str(), target.name.c_str(),
+                      config);
+    }
+
+    if (batching && !batch.empty()) {
+        batch.run(target.indices, dsm, target.name.c_str(), target.id, config);
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    tune_glibc_allocator();
 
     /* values filled in by getArgs from the command line */
     static config_st config;
 
     short dsm[6][6][6][6];
 
-    getArgs(argc, argv, &config);
-    if (uses_force_start(config)) {
-        validate_force_start_config(config);
-    }
+    getArgs(argc, argv, config);
 
     getMat(config.mat_name, &dsm[0][0][0][0], config.extension_penalty,
            config.transpose_matrix_flag);
 
-    if (config.seq2_file_name) {
-        /* target given as file - or STDIN */
-        FastaRAII target_fasta(config.seq2_file_name);
+    const auto queries = load_sequences(config.seq1_file_name, config.seq1_cli, "query");
+    const auto targets = load_sequences(config.seq2_file_name, config.seq2_cli, "target");
 
-        if (nullptr == target_fasta.handle()) {
-            fprintf(stderr, "Target file %s is not readable\n", config.seq2_file_name);
-            return -1;
-        }
-        FastaRecord target_record;
-
-        ByteBuffer query_seq_indices;
-        ByteBuffer target_seq_indices;
-
-        int target_count = 0;
-        while (target_record.read(target_fasta.handle())) {
-            target_count++;
-            /*can be done already when reading in first place */
-            if (!seq2ix(target_record.get_size(), target_record.get_sequence(), target_seq_indices,
-                        target_record.get_name(), "target")) {
-                continue; // non-alpha char in input
-            }
-            const auto len_seq2 = static_cast<std::uint32_t>(target_seq_indices.size());
-
-            if (config.seq1_file_name) {
-                /* query given as file */
-                FastaRAII query_fasta(config.seq1_file_name);
-                if (nullptr == query_fasta.handle()) {
-                    fprintf(stderr, "Query file %s is not readable\n", config.seq1_file_name);
-                    return -1;
-                }
-                FastaRecord query_record;
-                auto query_count = 0;
-
-                /* Queries are swept together where the sweep is what runs. */
-                QueryBatch batch;
-                const bool batching = QueryBatch::applies(config);
-
-                while (query_record.read(query_fasta.handle())) {
-                    query_count++;
-                    if (!seq2ix(query_record.get_size(), query_record.get_sequence(), query_seq_indices,
-                                query_record.get_name(), "query")) {
-                        continue; // non-alpha char in input
-                    }
-                    const auto len_seq1 = static_cast<std::uint32_t>(query_seq_indices.size());
-
-                    if (!config.all_vs_all && target_count != query_count) {
-                        continue;
-                    }
-
-                    if (batching) {
-                        batch.add(query_seq_indices, query_record.get_name(), query_count,
-                                  len_seq1);
-                        if (batch.full()) {
-                            batch.run(target_seq_indices, dsm, target_record.get_name(),
-                                      target_count, len_seq2, config);
-                        }
-                        continue;
-                    }
-
-                    if (config.printShort < 2)
-                        printf("\n\nquery %d: %s (%u nts) vs. target %d: %s (%u nts)\n\n",
-                               query_count, query_record.get_name(), len_seq1, target_count,
-                               target_record.get_name(), len_seq2);
-
-                    run_alignment(query_seq_indices, target_seq_indices, dsm, query_record.get_name(),
-                                  target_record.get_name(), config);
-                }
-                if (batching && !batch.empty()) {
-                    batch.run(target_seq_indices, dsm, target_record.get_name(), target_count,
-                              len_seq2, config);
-                }
-            } else if (config.seq1_cli) {
-                /* query given as command line parameter */
-                if (!seq2ix(strlen(config.seq1_cli), config.seq1_cli, query_seq_indices, "from command line",
-                            "query")) {
-                    return -1; /*non-alpha char in input -- break would loop through all query seqs,
-                                   no use */
-                }
-                const auto len_seq1 = static_cast<std::uint32_t>(query_seq_indices.size());
-
-                if (config.printShort < 2)
-                    printf("\n\nquery from_cli (%u nts) vs. target %s (%u nts)\n\n", len_seq1,
-                           target_record.get_name(), len_seq2);
-
-                run_alignment(query_seq_indices, target_seq_indices, dsm, "from_cli", target_record.get_name(), config);
-
-            } else {
-                fprintf(stderr, "No query seq given!");
-                /* is caught in getArg already -- alternative run seq against itself!? */
-            }
-        }
-    } else if (config.seq2_cli) {
-        /*target given as command line parameter */
-        ByteBuffer target_seq_indices;
-        if (!seq2ix(strlen(config.seq2_cli), config.seq2_cli, target_seq_indices, "from command line",
-                    "target")) {
-            return -1; /*non-alpha char in input */
-        }
-        const auto len_seq2 = static_cast<std::uint32_t>(target_seq_indices.size());
-
-        if (config.seq1_file_name) {
-            /* query given as file */
-
-            FastaRAII query_fasta(config.seq1_file_name);
-            if (nullptr == query_fasta.handle()) {
-                fprintf(stderr, "Query file %s is not readable\n", config.seq1_file_name);
-                return -1;
-            }
-            FastaRecord query_record;
-            ByteBuffer qseqIx;
-            while (query_record.read(query_fasta.handle())) {
-                if (!seq2ix(query_record.get_size(), query_record.get_sequence(), qseqIx,
-                            query_record.get_name(), "query")) {
-                    continue; /*non-alpha char in input */
-                }
-                const auto len_seq1 = static_cast<std::uint32_t>(qseqIx.size());
-
-                if (config.printShort < 2) {
-                    printf("\n\nquery %s (%u nts) vs. target from_cli (%u nts)\n\n",
-                           query_record.get_name(), len_seq1, len_seq2);
-                }
-
-                run_alignment(qseqIx, target_seq_indices, dsm, query_record.get_name(), "from_cli", config);
-            }
-        } else if (config.seq1_cli) {
-            /* query given as command line parameter */
-
-            ByteBuffer qseqIx;
-            if (!seq2ix(strlen(config.seq1_cli), config.seq1_cli, qseqIx, "from command line",
-                        "query")) {
-                return -1; /* non-alpha char in input -- break would loop through queries, no use */
-            }
-            const auto len_seq1 = static_cast<std::uint32_t>(qseqIx.size());
-
-            if (config.printShort < 2)
-                printf("\n\nquery from_cli (%u nts) vs. target from_cli (%u nts)\n\n", len_seq1,
-                       len_seq2);
-
-            run_alignment(qseqIx, target_seq_indices, dsm, "from_cli", "from_cli", config);
-        } else {
-            fprintf(stderr, "No query seq given!");
-            /* is caught in getArg already -- alternative run seq against itself!? */
-        }
-    } else {
-        fprintf(stderr, "No target seq given!");
-        /* is caught in getArg already -- alternative run seq against itself!? */
+    for (const auto& target : targets) {
+        process_target(target, queries, dsm, config);
     }
 
     return 0;

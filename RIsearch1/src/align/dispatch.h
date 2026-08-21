@@ -13,7 +13,7 @@ static void run_alignment(const ByteBuffer& query_seq, const ByteBuffer& target_
                           const config_st& config)
 {
     // can't align empty sequences
-    if (query_seq.empty() || target_seq.empty()) {
+    if (query_seq.is_empty() || target_seq.is_empty()) {
         return;
     }
 

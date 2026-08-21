@@ -79,10 +79,10 @@ public:
         m_m = m;
         m_stride = m + 1;
 
-        reserve(m_pair, m_pair_capacity, kContexts * m_stride * kPairGroup);
-        reserve(m_solo, m_solo_capacity, DSM_SIDE * m_stride * kSoloGroup);
-        reserve(m_ix_prefix, m_ix_prefix_capacity, m_stride * kLanes);
-        reserve(m_ix_extend, m_ix_extend_capacity, m_stride * kLanes);
+        reserve<std::int16_t>(m_pair, m_pair_capacity, kContexts * m_stride * kPairGroup);
+        reserve<std::int16_t>(m_solo, m_solo_capacity, DSM_SIDE * m_stride * kSoloGroup);
+        reserve<std::int16_t>(m_ix_prefix, m_ix_prefix_capacity, m_stride * kLanes);
+        reserve<std::int16_t>(m_ix_extend, m_ix_extend_capacity, m_stride * kLanes);
 
         std::int16_t* const ix_prefix = m_ix_prefix.get();
         std::int16_t* const ix_extend = m_ix_extend.get();
@@ -265,16 +265,6 @@ public:
     }
 
 private:
-    /* Grown, never shrunk: a run sweeps batch after batch of the same shape. */
-    static void reserve(MallocRAII<std::int16_t>& buffer, std::size_t& capacity, std::size_t wanted)
-    {
-        if (wanted <= capacity) {
-            return;
-        }
-        buffer.reset(static_cast<std::int16_t*>(malloc(wanted * sizeof(std::int16_t))));
-        capacity = wanted;
-    }
-
     std::uint32_t m_m = 0;
     std::uint32_t m_stride = 0;
 

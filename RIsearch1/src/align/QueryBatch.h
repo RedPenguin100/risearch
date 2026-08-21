@@ -24,15 +24,6 @@ public:
     static constexpr unsigned kQueries = BatchedQueryProfile::kLanes;
 
     /**
-     * The force-start modes align a fixed window instead of sweeping, and the
-     * reporting here assumes the ordinary path.
-     */
-    static bool applies(const config_st& config)
-    {
-        return !uses_force_start(config);
-    }
-
-    /**
      * The sequence and the name are copied: the read loop reuses its buffers for
      * the next record before this batch runs.
      */
@@ -60,7 +51,7 @@ public:
     }
 
     void run(const ByteBuffer& target_seq, short (&dsm)[6][6][6][6], const char* tname,
-             int target_count, std::uint32_t len_seq2, const config_st& config)
+             int target_count, const config_st& config)
     {
         m_exact_rows = config.doSubopt && config.vicinity > 0;
         const bool swept = sweep_impl(target_seq, dsm, config.min_score);
@@ -69,7 +60,7 @@ public:
             const Entry& e = m_entries[k];
             if (config.printShort < 2) {
                 printf("\n\nquery %d: %s (%u nts) vs. target %d: %s (%u nts)\n\n", e.query_count,
-                       e.name.data(), e.len, target_count, tname, len_seq2);
+                       e.name.data(), e.len, target_count, tname, static_cast<std::uint32_t>(target_seq.size()));
             }
             if (swept) {
                 report_query(k, e, target_seq, dsm, tname, config);
@@ -118,59 +109,84 @@ private:
         std::uint32_t len = 0;
     };
 
-    /* The whole batch goes through the kernel or none of it does: one query the
-       int16 bound does not hold for would have to be swept on its own anyway.
-
-       Below five queries the batch is behind the ordinary sweep -- it pays for
+    /* Below five queries the batch is behind the ordinary sweep -- it pays for
        sixteen lanes whatever it fills -- so a handful of ASOs, or the last few
        records of a file, go the ordinary way. */
     static constexpr unsigned kMinQueries = 5;
 
-    bool sweep_impl(const ByteBuffer& target_seq, short dsm[6][6][6][6], int threshold)
-    {
-#if RISEARCH1_HAS_AVX2
-        if (!CPU_HAS_AVX2 || m_count < kMinQueries || target_seq.empty()) {
-            return false;
-        }
 
+    /* What the kernel reads of the queries, gathered once. m is the longest of
+       them, which is what the rows are sized on. */
+    struct BatchInputs {
         const unsigned char* queries[kQueries];
         std::uint32_t lengths[kQueries];
         std::uint32_t m = 0;
-        for (auto k = 0u; k < m_count; k++) {
-            const Entry& e = m_entries[k];
-            if (e.seq.empty()) {
-                return false;
-            }
-            queries[k] = e.seq.unsigned_data();
-            lengths[k] = static_cast<std::uint32_t>(e.seq.size());
-            if (!fits_int16(dsm, queries[k], lengths[k])) {
-                return false;
-            }
-            m = MAX(m, lengths[k]);
-        }
-        /* The column a row max was reached at is carried in a lane of shorts. */
-        if (m > 32000) {
+    };
+
+    /* Whether the batched kernel can take this batch at all, and what it reads
+       of it. Everything here is decided before any of the run is set up, so a
+       no costs nothing but the walk over the queries.
+
+       The whole batch goes through the kernel or none of it does: one query the
+       int16 bound does not hold for would have to be swept on its own anyway. */
+    bool can_sweep(const ByteBuffer& target_seq, const short dsm[6][6][6][6],
+                   BatchInputs& inputs) const
+    {
+        if (!CPU_HAS_AVX2 || m_count < kMinQueries || target_seq.is_empty()) {
             return false;
         }
 
+        for (auto k = 0u; k < m_count; k++) {
+            const Entry& e = m_entries[k];
+            if (e.seq.is_empty()) {
+                return false;
+            }
+            inputs.queries[k] = e.seq.unsigned_data();
+            inputs.lengths[k] = static_cast<std::uint32_t>(e.seq.size());
+            if (!fits_int16(dsm, inputs.queries[k], inputs.lengths[k])) {
+                return false;
+            }
+            inputs.m = MAX(inputs.m, inputs.lengths[k]);
+        }
+
+        /* The column a row max was reached at is carried in a lane of shorts. */
+        return inputs.m <= 32000;
+    }
+
+    void allocate_sweep_buffers(std::size_t m, std::size_t n)
+    {
+        reserve<std::int16_t>(m_m_rows, m_m_rows_capacity, 2 * (m + 1) * kQueries);
+        reserve<std::int16_t>(m_iy_rows, m_iy_rows_capacity, 2 * (m + 1) * kQueries);
+        reserve<std::int16_t>(m_scan1, m_scan1_capacity, (m + 1) * kQueries);
+        reserve<std::int16_t>(m_hs16, m_hs16_capacity, n * kQueries);
+        reserve<std::int16_t>(m_hp16, m_hp16_capacity, n * kQueries);
+        reserve<std::int16_t>(m_hs, m_hs_capacity, n * kQueries);
+        reserve<std::int16_t>(m_hp, m_hp_capacity, n * kQueries);
+    }
+
+    bool sweep_impl(const ByteBuffer& target_seq, short dsm[6][6][6][6], int threshold)
+    {
+#if RISEARCH1_HAS_AVX2
+        BatchInputs inputs;
+        if (!can_sweep(target_seq, dsm, inputs)) {
+            return false;
+        }
+
+        const auto m = inputs.m;
         const auto n = static_cast<int>(target_seq.size());
         const unsigned char* const target = target_seq.unsigned_data();
         m_threshold = threshold;
 
-        if (!m_profile.build(queries, lengths, m_count, dsm, m)) {
+        if (!m_profile.build(inputs.queries, inputs.lengths, m_count, dsm, m)) {
             return false;
         }
-        reserve(m_m_rows, m_m_rows_capacity, 2 * static_cast<std::size_t>(m + 1) * kQueries);
-        reserve(m_iy_rows, m_iy_rows_capacity, 2 * static_cast<std::size_t>(m + 1) * kQueries);
-        reserve(m_scan1, m_scan1_capacity, static_cast<std::size_t>(m + 1) * kQueries);
-        reserve(m_hs16, m_hs16_capacity, static_cast<std::size_t>(n) * kQueries);
-        reserve(m_hp16, m_hp16_capacity, static_cast<std::size_t>(n) * kQueries);
-        reserve(m_hs, m_hs_capacity, static_cast<std::size_t>(n) * kQueries);
-        reserve(m_hp, m_hp_capacity, static_cast<std::size_t>(n) * kQueries);
+
+        allocate_sweep_buffers(m, n);
 
         std::int16_t first_score[kQueries];
         std::int16_t first_pos[kQueries];
-        if (!init_first_row(queries, lengths, m, target[n - 1], dsm, first_score, first_pos)) {
+        if (!init_first_row(inputs.queries, inputs.lengths, m, target[n - 1], dsm, first_score,
+                            first_pos)) {
             return false;
         }
         for (auto lane = 0u; lane < kQueries; lane++) {
@@ -216,7 +232,7 @@ private:
             m_iy_rows[lane] = 0;
         }
 
-        reserve_int(m_row1, m_row1_capacity, 3 * static_cast<std::size_t>(m + 1));
+        reserve<std::int32_t>(m_row1, m_row1_capacity, 3 * static_cast<std::size_t>(m + 1));
         int* const M = m_row1.get() + 0 * (m + 1);
         int* const Ix = m_row1.get() + 1 * (m + 1);
         int* const Iy = m_row1.get() + 2 * (m + 1);
@@ -296,10 +312,10 @@ private:
     __attribute__((target("avx2"))) void build_clear_bits(int n, int threshold)
     {
         const auto words = (static_cast<std::size_t>(n) + 31) / 32;
-        reserve_u32(m_clears, m_clears_capacity, words * kQueries);
-        for (auto k = 0u; k < words * kQueries; k++) {
-            m_clears[k] = 0;
-        }
+        reserve<std::uint32_t>(m_clears, m_clears_capacity, words * kQueries);
+
+        std::memset(m_clears.get(), 0, words * kQueries * sizeof(std::uint32_t));
+
 
         const __m256i thr = _mm256_set1_epi16(static_cast<std::int16_t>(
             threshold > SHRT_MAX ? SHRT_MAX : (threshold < SHRT_MIN ? SHRT_MIN : threshold)));
@@ -413,35 +429,6 @@ private:
                                          m_hs16.get() + lane, m_hp16.get() + lane, kQueries,
                                          running_max);
         }
-    }
-
-    static void reserve(MallocRAII<std::int16_t>& buffer, std::size_t& capacity,
-                        std::size_t wanted)
-    {
-        if (wanted <= capacity) {
-            return;
-        }
-        buffer.reset(static_cast<std::int16_t*>(malloc(wanted * sizeof(std::int16_t))));
-        capacity = wanted;
-    }
-
-    static void reserve_u32(MallocRAII<std::uint32_t>& buffer, std::size_t& capacity,
-                            std::size_t wanted)
-    {
-        if (wanted <= capacity) {
-            return;
-        }
-        buffer.reset(static_cast<std::uint32_t*>(malloc(wanted * sizeof(std::uint32_t))));
-        capacity = wanted;
-    }
-
-    static void reserve_int(MallocRAII<int>& buffer, std::size_t& capacity, std::size_t wanted)
-    {
-        if (wanted <= capacity) {
-            return;
-        }
-        buffer.reset(static_cast<int*>(malloc(wanted * sizeof(int))));
-        capacity = wanted;
     }
 
     Entry m_entries[kQueries];

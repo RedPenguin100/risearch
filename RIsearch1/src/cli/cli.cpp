@@ -182,6 +182,9 @@ void getArgs(int argc, char* argv[], config_st& config)
         fprintf(stderr, "\nQuery can currently not be read from STDIN, only target can!\n\n");
         usage(argv[0]);
     }
+    if (uses_force_start(config)) {
+        validate_force_start_config(config);
+    }
 }
 
 void validate_force_start_config(const config_st& config)

@@ -135,7 +135,7 @@ double measure_batched(int min_score, int repeats)
         for (int k = 0; k < kBatchQueries; k++) {
             batch.add(queries[k], names[k], k + 1, kQueryLength);
         }
-        batch.run(target, dsm, "t", 1, kTargetLength, config);
+        batch.run(target, dsm, "t", 1, config);
     }
     const auto elapsed = std::chrono::steady_clock::now() - start;
     testing::internal::GetCapturedStdout();

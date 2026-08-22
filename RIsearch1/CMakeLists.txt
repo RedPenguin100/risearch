@@ -59,6 +59,26 @@ set(RISEARCH1_WARNINGS -Wall -Wextra -pedantic
 # function and object in its own section at compile time, and --gc-sections drops
 # the unreferenced ones at link time. One without the other does nothing.
 set(RISEARCH1_COMPILE_OPTS -O3 -ffunction-sections -fdata-sections)
+
+# Never split a 256-bit unaligned access into two 128-bit ones. GCC 10 and older
+# do that by default: it suited Sandy Bridge, whose load path was 128 bits wide
+# internally, and AMD Bulldozer, which cracked every 256-bit op in two. Haswell
+# widened the path and the split became two loads and a vinserti128 where one
+# vmovdqu would do.
+#
+# The vector kernels here need AVX2, which no chip that wanted the split has --
+# AVX2 arrived with Haswell -- so the split is a loss for this program on every
+# machine that runs those kernels at all. It costs about 45% of a sweep. GCC 11
+# changed the default; the flag is what carries that back to older toolchains,
+# which is what the manylinux wheels are built with.
+include(CheckCXXCompilerFlag)
+foreach(flag -mno-avx256-split-unaligned-load -mno-avx256-split-unaligned-store)
+    string(MAKE_C_IDENTIFIER "HAVE${flag}" flag_var)
+    check_cxx_compiler_flag(${flag} ${flag_var})
+    if(${flag_var})
+        list(APPEND RISEARCH1_COMPILE_OPTS ${flag})
+    endif()
+endforeach()
 set(RISEARCH1_LINK_OPTS -Wl,--gc-sections)
 
 # LTO needs the same flag on both the compile and the link line. CMake's

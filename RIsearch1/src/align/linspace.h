@@ -7,6 +7,7 @@
 #include "HitReporter.h"
 #include "RunningMax.h"
 #include "align/ScoreTarget.h"
+#include "align/first_row.h"
 #include "align/int16_safety.h"
 #include "align/optimization/QueryProfile.h"
 #include "cli/cli.h"
@@ -78,44 +79,8 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
     }
 
 
-    /* init j=1 row */
-    /*init first col (i=0) */
-    Iy[1][0] = 0;
-    Ix[1][0] = M[1][0] = neg_inf<int_type>();
-
-    // n - 1 is the last nt in target
-    M[1][1] = dsm[GAP][query_sequence[0]][GAP][target_sequence[n - 1]];
-
-    RunningVectorMax running_row_max{};
-    running_row_max.set(M[1][1] + dsm[query_sequence[0]][GAP][target_sequence[n - 1]][GAP], 1);
-
-    /* (1,1) cell can not be in Ix or Iy state. */
-    Ix[1][1] = Iy[1][1] = neg_inf<int_type>();
-
-    const auto t_last = target_sequence[n - 1];
-
-    for (auto i = 2u; i <= m; i++) {
-        const auto q_prev = query_sequence[i - 2];
-        const auto q_cur = query_sequence[i - 1];
-
-        const auto open_score = dsm[GAP][q_cur][GAP][t_last];
-        const auto close_score = dsm[q_cur][GAP][t_last][GAP];
-
-        M[1][i] = open_score;
-        running_row_max.set_if_better(M[1][i] + close_score, i);
-
-        /* removed one option, namely: start new alignment that starts in gap, reflected by (-, Xi;
-         * -, -)  */
-        Ix[1][i] =
-            max3(0,
-                 /* prev. match, now gap (no match possible before!?)  - add (Xi-1, Xi; Y1, -) */
-                 M[1][i - 1] != 0 ? M[1][i - 1] + dsm[q_prev][q_cur][t_last][GAP] : -1,
-                 /* extending existing gap  - add (Xi-1, Xi; -, -) */
-                 Ix[1][i - 1] != 0 ? Ix[1][i - 1] + dsm[q_prev][q_cur][GAP][GAP] : -1);
-
-        // There is no previous row, so there can't be a bulge.
-        Iy[1][i] = neg_inf<int_type>();
-    }
+    const RunningVectorMax running_row_max = score_first_row<int_type>(
+        M[1], Ix[1], Iy[1], query_sequence, m, target_sequence[n - 1], dsm);
     running_max.set(running_row_max.score, running_row_max.pos_i, 1);
 
 

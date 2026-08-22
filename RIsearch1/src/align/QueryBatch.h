@@ -6,6 +6,7 @@
 #include "align/HitReporter.h"
 #include "align/ScoreTargetBatched.h"
 #include "align/dispatch.h"
+#include "align/first_row.h"
 #include "align/int16_safety.h"
 #include "align/optimization/BatchedQueryProfile.h"
 #include "cli/cli.h"
@@ -256,26 +257,8 @@ private:
             const unsigned char* const q = queries[lane];
             const auto len = lengths[lane];
 
-            Iy[0] = 0;
-            Ix[0] = M[0] = NEGINF;
-            M[1] = dsm[GAP][q[0]][GAP][t_last];
-            Ix[1] = Iy[1] = NEGINF;
-
-            RunningVectorMax running_row_max{};
-            running_row_max.set(M[1] + dsm[q[0]][GAP][t_last][GAP], 1);
-
-            for (auto i = 2u; i <= len; i++) {
-                const auto q_prev = q[i - 2];
-                const auto q_cur = q[i - 1];
-
-                M[i] = dsm[GAP][q_cur][GAP][t_last];
-                running_row_max.set_if_better(M[i] + dsm[q_cur][GAP][t_last][GAP],
-                                              static_cast<int>(i));
-
-                Ix[i] = max3(0, M[i - 1] != 0 ? M[i - 1] + dsm[q_prev][q_cur][t_last][GAP] : -1,
-                             Ix[i - 1] != 0 ? Ix[i - 1] + dsm[q_prev][q_cur][GAP][GAP] : -1);
-                Iy[i] = NEGINF;
-            }
+            const RunningVectorMax running_row_max =
+                score_first_row<int>(M, Ix, Iy, q, len, t_last, dsm);
 
             for (auto i = 0u; i <= len; i++) {
                 m_row[i * kQueries + lane] =

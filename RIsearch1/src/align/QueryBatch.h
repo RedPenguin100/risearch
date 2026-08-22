@@ -10,7 +10,7 @@
 #include "align/optimization/BatchedQueryProfile.h"
 #include "cli/cli.h"
 #include "memory/ByteBuffer.hpp"
-#include "memory/MallocRAII.hpp"
+#include "memory/GrowableBuffer.hpp"
 
 /**
  * Queries held back so that several can be swept against one target together.
@@ -159,13 +159,13 @@ private:
         const auto query_stride = (m + 1) * kQueries;
         const auto target_stride = n * kQueries;
 
-        reserve<std::int16_t>(m_m_rows, m_m_rows_capacity, 2 * query_stride);
-        reserve<std::int16_t>(m_iy_rows, m_iy_rows_capacity, 2 * query_stride);
-        reserve<std::int16_t>(m_scan1, m_scan1_capacity, query_stride);
-        reserve<std::int16_t>(m_hs16, m_hs16_capacity, target_stride);
-        reserve<std::int16_t>(m_hp16, m_hp16_capacity, target_stride);
-        reserve<std::int16_t>(m_hs, m_hs_capacity, target_stride);
-        reserve<std::int16_t>(m_hp, m_hp_capacity, target_stride);
+        m_m_rows.reserve(2 * query_stride);
+        m_iy_rows.reserve(2 * query_stride);
+        m_scan1.reserve(query_stride);
+        m_hs16.reserve(target_stride);
+        m_hp16.reserve(target_stride);
+        m_hs.reserve(target_stride);
+        m_hp.reserve(target_stride);
     }
 
     bool sweep_impl(const ByteBuffer& target_seq, short dsm[6][6][6][6], int threshold)
@@ -236,7 +236,7 @@ private:
             m_iy_rows[lane] = 0;
         }
 
-        reserve<std::int32_t>(m_row1, m_row1_capacity, 3 * static_cast<std::size_t>(m + 1));
+        m_row1.reserve(3 * static_cast<std::size_t>(m + 1));
         int* const M = m_row1.get() + 0 * (m + 1);
         int* const Ix = m_row1.get() + 1 * (m + 1);
         int* const Iy = m_row1.get() + 2 * (m + 1);
@@ -316,7 +316,7 @@ private:
     __attribute__((target("avx2"))) void build_clear_bits(int n, int threshold)
     {
         const auto words = (static_cast<std::size_t>(n) + 31) / 32;
-        reserve<std::uint32_t>(m_clears, m_clears_capacity, words * kQueries);
+        m_clears.reserve(words * kQueries);
 
         std::memset(m_clears.get(), 0, words * kQueries * sizeof(std::uint32_t));
 
@@ -435,15 +435,12 @@ private:
     unsigned m_count = 0;
 
     BatchedQueryProfile m_profile;
-    MallocRAII<std::int16_t> m_m_rows, m_iy_rows, m_scan1, m_hs16, m_hp16;
-    MallocRAII<std::int16_t> m_hs, m_hp;
-    MallocRAII<int> m_row1;
-    MallocRAII<std::uint32_t> m_clears;
-    std::size_t m_clears_capacity = 0;
+    GrowableBuffer<std::int16_t> m_m_rows, m_iy_rows, m_scan1;
+    GrowableBuffer<std::int16_t> m_hs16, m_hp16;
+    GrowableBuffer<std::int16_t> m_hs, m_hp;
+    GrowableBuffer<int> m_row1;
+    GrowableBuffer<std::uint32_t> m_clears;
     std::size_t m_clear_words = 0;
-    std::size_t m_m_rows_capacity = 0, m_iy_rows_capacity = 0, m_scan1_capacity = 0;
-    std::size_t m_hs16_capacity = 0, m_hp16_capacity = 0;
-    std::size_t m_hs_capacity = 0, m_hp_capacity = 0, m_row1_capacity = 0;
     std::int16_t m_best_score[kQueries]{};
     std::int16_t m_best_i[kQueries]{};
     int m_best_j[kQueries]{};

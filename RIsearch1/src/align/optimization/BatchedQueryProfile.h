@@ -5,7 +5,7 @@
 
 #include "align/int16_safety.h" /* NEG_INF_SHORT */
 #include "dsm.h"
-#include "memory/MallocRAII.hpp"
+#include "memory/GrowableBuffer.hpp"
 #include "nucleotide.h" /* GAP */
 #include "optimization/QueryProfile.h"
 
@@ -79,10 +79,10 @@ public:
         m_m = m;
         m_stride = m + 1;
 
-        reserve<std::int16_t>(m_pair, m_pair_capacity, kContexts * m_stride * kPairGroup);
-        reserve<std::int16_t>(m_solo, m_solo_capacity, DSM_SIDE * m_stride * kSoloGroup);
-        reserve<std::int16_t>(m_ix_prefix, m_ix_prefix_capacity, m_stride * kLanes);
-        reserve<std::int16_t>(m_ix_extend, m_ix_extend_capacity, m_stride * kLanes);
+        m_pair.reserve(kContexts * m_stride * kPairGroup);
+        m_solo.reserve(DSM_SIDE * m_stride * kSoloGroup);
+        m_ix_prefix.reserve(m_stride * kLanes);
+        m_ix_extend.reserve(m_stride * kLanes);
 
         std::int16_t* const ix_prefix = m_ix_prefix.get();
         std::int16_t* const ix_extend = m_ix_extend.get();
@@ -268,15 +268,10 @@ private:
     std::uint32_t m_m = 0;
     std::uint32_t m_stride = 0;
 
-    MallocRAII<std::int16_t> m_pair;
-    MallocRAII<std::int16_t> m_solo;
-    MallocRAII<std::int16_t> m_ix_prefix;
-    MallocRAII<std::int16_t> m_ix_extend;
-
-    std::size_t m_pair_capacity = 0;
-    std::size_t m_solo_capacity = 0;
-    std::size_t m_ix_prefix_capacity = 0;
-    std::size_t m_ix_extend_capacity = 0;
+    GrowableBuffer<std::int16_t> m_pair;
+    GrowableBuffer<std::int16_t> m_solo;
+    GrowableBuffer<std::int16_t> m_ix_prefix;
+    GrowableBuffer<std::int16_t> m_ix_extend;
 
     const std::int16_t* m_pair_base[kContexts]{};
     const std::int16_t* m_solo_base[DSM_SIDE]{};

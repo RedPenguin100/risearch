@@ -88,10 +88,12 @@ TEST(BatchedQueryProfile, HoldsWhatSixteenSingleProfilesHold)
                 EXPECT_EQ(solo(batch, t_cur, i, BatchedQueryProfile::kClose)[lane], row.close[i]);
             }
         }
-        /* From 2: a query bulge needs two positions, so the single profile
-           never writes the first two and nothing reads them. */
+        /* The running total of ix_extend, which is what the Ix scan takes out of
+           its candidates and the only form of it either profile keeps. From 2: a
+           query bulge needs two positions, so neither writes the first two. */
+        const auto ix_row = one.row(Profile::context(0, 0));
         for (auto i = 2u; i <= 20; i++) {
-            EXPECT_EQ(batch.ix_extend()[i * kLanes + lane], one.ix_extend()[i])
+            EXPECT_EQ(batch.ix_prefix()[i * kLanes + lane], ix_row.ix_prefix[i])
                 << "lane " << lane << " i " << i;
         }
     }

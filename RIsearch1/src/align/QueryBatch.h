@@ -420,7 +420,7 @@ private:
         RunningMax running_max{};
         running_max.set(m_best_score[lane], m_best_i[lane], m_best_j[lane]);
 
-        HitReporter reporter(query, target, m_n, dsm, profile, config, e.name.data(), tname);
+        HitReporter reporter(query, target, m_n, profile, config, e.name.data(), tname);
         if (m_exact_rows) {
             const auto offset = static_cast<std::size_t>(lane) * m_n;
             reporter.report_sweep(m_hs.get() + offset, m_hp.get() + offset, config.min_score,

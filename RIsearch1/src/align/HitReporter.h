@@ -33,9 +33,9 @@
 class HitReporter {
 public:
     HitReporter(const unsigned char* query, const unsigned char* target, std::uint32_t n,
-                short dsm[6][6][6][6], const QueryProfile<std::int32_t>& profile,
-                const config_st& config, const char* qname, const char* tname)
-        : m_query(query), m_target(target), m_n(n), m_dsm(dsm), m_profile(profile),
+                const QueryProfile<std::int32_t>& profile, const config_st& config,
+                const char* qname, const char* tname)
+        : m_query(query), m_target(target), m_n(n), m_profile(profile),
           m_config(config), m_qname(qname), m_tname(tname),
           m_reference(reference_from_matrix(config.mat_name)), m_matrices(config.tblen),
           m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen)),
@@ -257,7 +257,6 @@ private:
     const unsigned char* m_query;
     const unsigned char* m_target;
     std::uint32_t m_n;
-    short (*m_dsm)[6][6][6];
     const QueryProfile<std::int32_t>& m_profile;
     const config_st& m_config;
     const char* m_qname;

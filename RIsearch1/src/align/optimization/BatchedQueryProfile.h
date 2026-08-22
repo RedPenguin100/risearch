@@ -23,8 +23,8 @@
  * (t_prev, t_cur); the other four have t_prev nowhere in them and are indexed by
  * t_cur alone, which is six rows of the table rather than thirty-six.
  *
- * ix_extend and ix_prefix have no target dependence and get their own run over
- * query positions; iy_extend has no query dependence and is one per dinucleotide.
+ * ix_prefix has no target dependence and gets its own run over query positions;
+ * iy_extend has no query dependence and is one per dinucleotide.
  */
 class BatchedQueryProfile {
 public:
@@ -82,28 +82,22 @@ public:
         m_pair.reserve(kContexts * m_stride * kPairGroup);
         m_solo.reserve(DSM_SIDE * m_stride * kSoloGroup);
         m_ix_prefix.reserve(m_stride * kLanes);
-        m_ix_extend.reserve(m_stride * kLanes);
 
         std::int16_t* const ix_prefix = m_ix_prefix.get();
-        std::int16_t* const ix_extend = m_ix_extend.get();
 
-        /* No target dependence: a query bulge over a gap on both sides, and the
-           running total of it that the Ix scan takes out of its candidates. */
+        /* The running total of a query bulge over a gap on both sides, which the
+           Ix scan takes out of its candidates. No target dependence. */
         for (auto lane = 0u; lane < kLanes; lane++) {
             ix_prefix[0 * kLanes + lane] = 0;
             ix_prefix[1 * kLanes + lane] = 0;
-            ix_extend[0 * kLanes + lane] = 0;
-            ix_extend[1 * kLanes + lane] = 0;
         }
         for (auto i = 2u; i <= m; i++) {
             for (auto lane = 0u; lane < kLanes; lane++) {
-                std::int16_t extend = 0;
                 std::int16_t prefix = ix_prefix[(i - 1) * kLanes + lane];
                 if (lane < count && i <= lengths[lane]) {
-                    extend = dsm[queries[lane][i - 2]][queries[lane][i - 1]][GAP][GAP];
-                    prefix = static_cast<std::int16_t>(prefix + extend);
+                    prefix = static_cast<std::int16_t>(
+                        prefix + dsm[queries[lane][i - 2]][queries[lane][i - 1]][GAP][GAP]);
                 }
-                ix_extend[i * kLanes + lane] = extend;
                 ix_prefix[i * kLanes + lane] = prefix;
             }
         }
@@ -254,11 +248,6 @@ public:
         return m_ix_prefix.get();
     }
 
-    const std::int16_t* ix_extend() const
-    {
-        return m_ix_extend.get();
-    }
-
     std::int16_t iy_extend(unsigned ctx) const
     {
         return m_iy_extend[ctx];
@@ -271,7 +260,6 @@ private:
     GrowableBuffer<std::int16_t> m_pair;
     GrowableBuffer<std::int16_t> m_solo;
     GrowableBuffer<std::int16_t> m_ix_prefix;
-    GrowableBuffer<std::int16_t> m_ix_extend;
 
     const std::int16_t* m_pair_base[kContexts]{};
     const std::int16_t* m_solo_base[DSM_SIDE]{};

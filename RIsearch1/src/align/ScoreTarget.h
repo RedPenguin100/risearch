@@ -22,6 +22,11 @@
  * must be. score_target_avx2 computes the same recurrence eight query positions
  * at a time and has to agree with it bit for bit, so the two are meant to be
  * read side by side.
+ *
+ * BOTH KEEP TWO ROWS AS A PAIR OF POINTERS, swapped at the end of each target
+ * position. Row j belongs in row j % 2, so j = 2 writes row 0 and the swap says
+ * the same thing, while keeping the row addresses in registers rather than
+ * reloading them from the array every row.
  */
 
 #include "avx2/primitives.h"
@@ -69,77 +74,82 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int
     const auto m = profile.query_length();
 
 
-    for (auto j = 2u; j <= n; j++) {
-        /* Begin init of i=1 case */
-        const auto currentRow = j % 2;
-        const auto lastRow = 1 - currentRow;
+    int_type* m_cur = M[0];
+    int_type* m_last = M[1];
+    int_type* ix_cur = Ix[0];
+    int_type* ix_last = Ix[1];
+    int_type* iy_cur = Iy[0];
+    int_type* iy_last = Iy[1];
 
+    for (auto j = 2u; j <= n; j++) {
         const auto target_current = target_sequence[n - j];
         const auto target_prev = target_sequence[n - j + 1];
 
-        /* DSM caching optimization */
         const auto context = QueryProfile<int_type>::context(target_prev, target_current);
         const auto T = profile.row(context);
         const auto iy_ext = T.iy_extend;
-        /* DSM caching optimization */
 
 
         /* Column 1 is the query's first nt, nothing can precede it */
-        M[currentRow][1] = MAX(0, T.m_open[1]);
+        m_cur[1] = MAX(0, T.m_open[1]);
 
         // Track only the best value, the position is recovered later (OPTIMIZATION)
-        auto row_max = M[currentRow][1] + T.close[1];
+        auto row_max = m_cur[1] + T.close[1];
 
         // Ix bulges a query nt, impossible in 1st nucleotide
-        Ix[currentRow][1] = neg_inf<int_type>();
+        ix_cur[1] = neg_inf<int_type>();
 
         // Iy bulges a target nt, j>=2 so bulge possible.
         // Only M can win row max, so we don't take this as a candidate
-        Iy[currentRow][1] = MAX(
+        iy_cur[1] = MAX(
             // We are now opening the bulge
-            M[lastRow][1] + T.iy_from_m[1],
+            m_last[1] + T.iy_from_m[1],
             // We are extending a bulge
-            Iy[lastRow][1] + iy_ext);
+            iy_last[1] + iy_ext);
 
         /* finished init of i=1 col */
 
 
         for (auto i = 2u; i <= m; i++) {
             // Assign M with a 4-way max
-            M[currentRow][i] = max4(
+            m_cur[i] = max4(
                 /* coming from a match */
-                M[lastRow][i - 1] != 0 ? M[lastRow][i - 1] + T.m_from_m[i] : -1,
+                m_last[i - 1] != 0 ? m_last[i - 1] + T.m_from_m[i] : -1,
                 /* coming from gap in target */
-                Ix[lastRow][i - 1] + T.m_from_ix[i],
+                ix_last[i - 1] + T.m_from_ix[i],
                 /* coming from gap in query */
-                Iy[lastRow][i - 1] + T.m_from_iy[i],
+                iy_last[i - 1] + T.m_from_iy[i],
                 /* start fresh */
                 T.m_open[i]);
 
             // Set max now, position is recovered later
-            row_max = MAX(row_max, M[currentRow][i] + T.close[i]);
+            row_max = MAX(row_max, m_cur[i] + T.close[i]);
 
             // Iy: target nt against a gap
-            Iy[currentRow][i] = MAX(
+            iy_cur[i] = MAX(
                 // pair at previous row, now bulge
-                M[lastRow][i] + T.iy_from_m[i],
+                m_last[i] + T.iy_from_m[i],
                 // already bulging, add one more
-                Iy[lastRow][i] + iy_ext);
+                iy_last[i] + iy_ext);
         }
 
-        // Split the loop for performance.
+        // Ix reads the row it writes, so it gets a pass of its own.
         for (auto i = 2u; i <= m; ++i) {
             // Ix: query nt against a gap
-            Ix[currentRow][i] = MAX(
+            ix_cur[i] = MAX(
                 // pair at i - 1, now bulge
-                M[currentRow][i - 1] + T.ix_from_m[i],
+                m_cur[i - 1] + T.ix_from_m[i],
                 // already bulging, add one more
-                Ix[currentRow][i - 1] + T.ix_extend[i]);
+                ix_cur[i - 1] + T.ix_extend[i]);
         }
 
-        record_row<int_type>(M[currentRow], T, m, row_max, j, threshold, run_scores, run_positions,
+        record_row<int_type>(m_cur, T, m, row_max, j, threshold, run_scores, run_positions,
                              running_max);
 
+        /* The row just written becomes the row read. */
+        std::swap(m_cur, m_last);
+        std::swap(ix_cur, ix_last);
+        std::swap(iy_cur, iy_last);
     } /*next row j */
 }
 
@@ -215,7 +225,6 @@ ix_dp_loop_avx2(int_type* ix_out, const int_type* ix_from_m_scan, const int_type
 /* The same recurrence, eight query positions at a time. Differences from the
  * scalar version above, and nothing else:
  *
- *  - the two rows are swapped pointers instead of j % 2 indices;
  *  - M and Iy read only the previous row, so eight of their columns are
  *    independent and a block computes them outright. The blocks cover columns
  *    2..m, the last backed up to end at m and recomputing the columns it
@@ -249,9 +258,6 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
 {
     const auto m = profile.query_length();
 
-    /* Row j is written to row j % 2, so the first row here, j = 2, writes row 0;
-       swapping the two pointers at the end of each step is the same thing and
-       keeps the row addresses in registers. */
     int_type* m_cur = M[0];
     int_type* m_last = M[1];
     int_type* ix_cur = Ix[0];

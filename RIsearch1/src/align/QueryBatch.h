@@ -165,8 +165,13 @@ private:
         m_scan1.reserve(query_stride);
         m_hs16.reserve(target_stride);
         m_hp16.reserve(target_stride);
-        m_hs.reserve(target_stride);
-        m_hp.reserve(target_stride);
+        /* The runs laid out by query are what a vicinity window reads; without
+           one the reporting takes the sweep's own layout and these are never
+           touched. At a long target they are the two largest buffers here. */
+        if (m_exact_rows) {
+            m_hs.reserve(target_stride);
+            m_hp.reserve(target_stride);
+        }
     }
 
     bool sweep_impl(const ByteBuffer& target_seq, short dsm[6][6][6][6], int threshold)

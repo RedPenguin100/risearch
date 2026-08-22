@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 
 #include "memory/ByteBuffer.hpp"
 
@@ -21,4 +21,3 @@ typedef struct fastafile_s {
 FASTAFILE* OpenFASTA(const char* seqfile);
 bool ReadFASTA(FASTAFILE* fp, ByteBuffer& ret_seq, ByteBuffer& ret_name);
 void CloseFASTA(FASTAFILE* ffp);
-

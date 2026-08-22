@@ -5,12 +5,11 @@
 
 #include <gtest/gtest.h>
 
+#include <climits>
 #include <string>
 
-#include "risearch_runner.h"
 #include "base_args.h"
-
-#include <climits>
+#include "risearch_runner.h"
 
 
 namespace {

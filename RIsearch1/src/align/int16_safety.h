@@ -15,8 +15,6 @@
  */
 
 
-
-
 static constexpr short NEG_INF_SHORT = SHRT_MIN;
 
 /**

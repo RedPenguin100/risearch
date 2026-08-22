@@ -47,8 +47,7 @@ TEST(Int16Bound, GrowsWithTheQueryUntilItStopsFitting)
     const auto short_q = alternating(0, 1, 20);
     const auto long_q = alternating(0, 1, 60);
 
-    EXPECT_LT(int16_bound(dsm, short_q.data(), 20),
-              int16_bound(dsm, long_q.data(), 60));
+    EXPECT_LT(int16_bound(dsm, short_q.data(), 20), int16_bound(dsm, long_q.data(), 60));
     EXPECT_TRUE(fits_int16(dsm, short_q.data(), 20));
     EXPECT_FALSE(fits_int16(dsm, long_q.data(), 60));
 }

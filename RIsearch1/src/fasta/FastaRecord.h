@@ -1,8 +1,7 @@
 #pragma once
 
-#include "memory/ByteBuffer.hpp"
-
 #include "fasta/fasta.h"
+#include "memory/ByteBuffer.hpp"
 
 
 class FastaRecord {

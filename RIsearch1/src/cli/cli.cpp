@@ -97,13 +97,13 @@ void getArgs(int argc, char* argv[], config_st& config)
     config.min_score = INT_MAX; /* score cutoff; if not set, only print best */
     config.doSubopt = 0;        /* flag : minScore in use */
     config.max_energy =
-        INT_MAX;          /*energy cutoff, not even print 'best' if it's not lower than that! */
+        INT_MAX;         /*energy cutoff, not even print 'best' if it's not lower than that! */
     config.filter_e = 0; /* flag : filterE in use */
     config.weighted_positions = 0; /*true if each position of interaction has a certain weight. */
     config.pos_weights =
         DEFAULT_POS_WEIGHTS; /*name of the array being used to assign weights to positions */
-    config.vicinity = 0;    /* to omit neighboring hits (subalignments) */
-    config.printShort = 0;  /* switch p to print 1 line per IA, only pos&E, not IA itself */
+    config.vicinity = 0;     /* to omit neighboring hits (subalignments) */
+    config.printShort = 0;   /* switch p to print 1 line per IA, only pos&E, not IA itself */
     config.force_start_val = -1;
     /* values used to unitialize the first column of the M matrix. If sufficiently high, can force
      * the interaction to start at position 0 of the DNA. */

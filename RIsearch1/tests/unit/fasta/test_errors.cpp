@@ -2,10 +2,11 @@
 
 #include <gtest/gtest.h>
 
-#include "fasta.h"
-#include "memory/ByteBuffer.hpp"
 #include <cstdlib>
 #include <string>
+
+#include "fasta.h"
+#include "memory/ByteBuffer.hpp"
 
 std::string WriteFasta(const char* stem, const std::string& content)
 {
@@ -47,28 +48,32 @@ static void ReadAll(const std::string& path)
 
 TEST(FastaDeathTest, RejectsAByteAbove127)
 {
-    const std::string path = WriteFasta("high_bit", ">gene1\nACGU\xff" "ACGU\n");
+    const std::string path = WriteFasta("high_bit", ">gene1\nACGU\xff"
+                                                    "ACGU\n");
     EXPECT_EXIT(ReadAll(path), ::testing::ExitedWithCode(1), "Corrupt byte 0xff");
 }
 
 TEST(FastaDeathTest, RejectsUtf8InASequence)
 {
     // A file that went through an editor and picked up an accented character.
-    const std::string path = WriteFasta("utf8_seq", ">gene1\nACGU\xc3\xa9" "ACGU\n");
+    const std::string path = WriteFasta("utf8_seq", ">gene1\nACGU\xc3\xa9"
+                                                    "ACGU\n");
     EXPECT_EXIT(ReadAll(path), ::testing::ExitedWithCode(1), "Corrupt byte 0xc3");
 }
 
 TEST(FastaDeathTest, RejectsAControlCharacter)
 {
     // What the tail of a truncated file tends to look like.
-    const std::string path = WriteFasta("control", ">gene1\nACGU\x01" "ACGU\n");
+    const std::string path = WriteFasta("control", ">gene1\nACGU\x01"
+                                                   "ACGU\n");
     EXPECT_EXIT(ReadAll(path), ::testing::ExitedWithCode(1), "Corrupt byte 0x01");
 }
 
 TEST(FastaDeathTest, NamesTheRecordItRejected)
 {
     // A 40k-record file gives nothing to go on without the name.
-    const std::string path = WriteFasta("named", ">first\nACGU\n>second\nAC\xff" "GU\n");
+    const std::string path = WriteFasta("named", ">first\nACGU\n>second\nAC\xff"
+                                                 "GU\n");
     EXPECT_EXIT(ReadAll(path), ::testing::ExitedWithCode(1), "of 'second'");
 }
 

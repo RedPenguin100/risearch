@@ -159,8 +159,6 @@ void print_header(const SequenceItem& query, const SequenceItem& target)
 void process_target(const SequenceItem& target, const std::vector<SequenceItem>& queries,
                     short (&dsm)[6][6][6][6], const config_st& config)
 {
-    const auto len_seq2 = static_cast<std::uint32_t>(target.indices.size());
-
     /* Queries are swept together where the sweep is what runs. Only a file
        holds enough queries to fill a batch's lanes, and only a file numbers the
        records that pairing them off reads. */

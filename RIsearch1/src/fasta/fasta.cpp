@@ -84,11 +84,12 @@
  *           CloseFASTA() "always succeeds" and returns void.
  */
 
-#include <cstdlib>
+#include "fasta.h"
+
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
-#include "fasta.h"
 #include "fasta/ResidueTable.h"
 
 
@@ -110,7 +111,7 @@ bool tolerated_in_sequence(unsigned char c)
  * takes.
  */
 [[noreturn]] __attribute__((noinline, cold)) void reject_corrupt_byte(unsigned char c,
-                                                                     const char* name)
+                                                                      const char* name)
 {
     fprintf(stderr, "Corrupt byte 0x%02x in the sequence of '%s'.\n", c, name);
     exit(1);

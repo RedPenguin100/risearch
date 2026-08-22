@@ -130,9 +130,8 @@ TEST(BatchedSweep, EveryQueryMatchesTheSweepItReplaces)
         const auto* got_hp = batch.positions(k);
 
         for (auto j = 0; j < batch.swept_length(); j++) {
-            ASSERT_EQ(got_hs[j], one.hs[j])
-                << "score differs: query " << k << " (m=" << lengths[k] << ") at target position "
-                << j + 1;
+            ASSERT_EQ(got_hs[j], one.hs[j]) << "score differs: query " << k << " (m=" << lengths[k]
+                                            << ") at target position " << j + 1;
             /* A position is only read where its score is worth reporting. */
             if (one.hs[j] > threshold) {
                 ASSERT_EQ(got_hp[j], one.hp[j])

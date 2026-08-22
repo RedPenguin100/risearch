@@ -2,7 +2,6 @@
 
 #include <cstdlib>
 #include <cstring>
-
 #include <utility> // for std::exchange
 
 /**
@@ -25,7 +24,6 @@ public:
 
     ByteBuffer(const ByteBuffer&) = delete;
     ByteBuffer& operator=(const ByteBuffer&) = delete;
-
 
 
     // Move Constructor

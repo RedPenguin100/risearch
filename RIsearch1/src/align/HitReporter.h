@@ -30,17 +30,14 @@
  * once per query/target pair and reused for every hit -- there may be hundreds
  * of thousands of them.
  */
-template<typename int_type>
 class HitReporter {
 public:
     HitReporter(const unsigned char* query, const unsigned char* target, std::uint32_t n,
-                short dsm[6][6][6][6], const QueryProfile<int_type>& profile,
-                const config_st& config,
+                const QueryProfile<std::int32_t>& profile, const config_st& config,
                 const char* qname, const char* tname)
-        : m_query(query), m_target(target), m_n(n), m_dsm(dsm), m_profile(profile),
+        : m_query(query), m_target(target), m_n(n), m_profile(profile),
           m_config(config), m_qname(qname), m_tname(tname),
-          m_reference(reference_from_matrix(config.mat_name)),
-          m_matrices(config.tblen),
+          m_reference(reference_from_matrix(config.mat_name)), m_matrices(config.tblen),
           m_best(config.tblen + 1), m_hit(static_cast<int>(1.5 * config.tblen)),
           /* Seven decimal fields, the energy and the separators, plus the two
              names: everything in a line whose length is known up front. */
@@ -55,8 +52,7 @@ public:
     {
         const auto w = extract(pos_i, pos_j);
 
-        RIs<int_type>(m_query + w.qbeg - 1, w.target, w.qlen, w.tlen, &m_hit, m_config,
-                      m_matrices.M(),
+        RIs(m_query + w.qbeg - 1, w.target, w.qlen, w.tlen, &m_hit, m_config, m_matrices.M(),
             m_matrices.Ix(), m_matrices.Iy(), m_profile, w.qbeg - 1, m_best.get());
 
         const auto energy =
@@ -78,9 +74,7 @@ public:
     void report_sweep(const Score* hits_score, const Score* hits_pos, int threshold,
                       const RunningMax& running_max)
     {
-        if (!(m_config.doSubopt && (m_config.filter_e || m_config.printShort > 1))) {
-            report(running_max.pos_i, running_max.pos_j, running_max.score, false);
-        }
+        report_top_hit_if_needed(running_max);
 
         if (m_config.doSubopt) {
             auto j = static_cast<int>(m_n); /* the runs are 0-based over rows 1..n */
@@ -106,10 +100,7 @@ public:
             }
         }
 
-        /* One line per query and target rather than per hit. */
-        if (m_config.printShort == 3) {
-            write_line(FMT_COMPILE("{}\t{}\t{}\n"), m_qname, m_tname, m_hitcount);
-        }
+        finalize_report();
     }
 
     /* The same walk, over a run given as one bit per target position rather than
@@ -131,9 +122,7 @@ public:
                              const Score* positions, std::size_t stride,
                              const RunningMax& running_max)
     {
-        if (!(m_config.doSubopt && (m_config.filter_e || m_config.printShort > 1))) {
-            report(running_max.pos_i, running_max.pos_j, running_max.score, false);
-        }
+        report_top_hit_if_needed(running_max);
 
         if (m_config.doSubopt) {
             const auto rows = static_cast<std::uint32_t>(m_n);
@@ -154,9 +143,7 @@ public:
             }
         }
 
-        if (m_config.printShort == 3) {
-            write_line(FMT_COMPILE("{}\t{}\t{}\n"), m_qname, m_tname, m_hitcount);
-        }
+        finalize_report();
     }
 
     int hitcount() const
@@ -165,6 +152,20 @@ public:
     }
 
 private:
+    void report_top_hit_if_needed(const RunningMax& running_max)
+    {
+        if (!(m_config.doSubopt && (m_config.filter_e || m_config.printShort > 1))) {
+            report(running_max.pos_i, running_max.pos_j, running_max.score, false);
+        }
+    }
+    void finalize_report()
+    {
+        /* One line per query and target rather than per hit. */
+        if (m_config.printShort == 3) {
+            write_line(FMT_COMPILE("{}\t{}\t{}\n"), m_qname, m_tname, m_hitcount);
+        }
+    }
+
     struct Window {
         std::uint32_t qbeg; /* 1-based query position the window starts at */
         std::uint32_t qlen;
@@ -225,8 +226,8 @@ private:
                extracting this function cannot move any output. */
             if (is_suboptimal) {
                 const char* const ia = m_hit.ali_ia.get();
-                write_line(std::strlen(ia),
-                           FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\t{}\n"), qb, qe, te, tb, energy, ia);
+                write_line(std::strlen(ia), FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\t{}\n"), qb, qe, te,
+                           tb, energy, ia);
             } else {
                 write_line(FMT_COMPILE("{}\t{}\t{}\t{}\t{:.2f}\n"), qb, qe, tb, te, energy);
             }
@@ -256,17 +257,16 @@ private:
     const unsigned char* m_query;
     const unsigned char* m_target;
     std::uint32_t m_n;
-    short (*m_dsm)[6][6][6];
-    const QueryProfile<int_type>& m_profile;
+    const QueryProfile<std::int32_t>& m_profile;
     const config_st& m_config;
     const char* m_qname;
     const char* m_tname;
     float m_reference;
 
     /* Scratch, reused across every hit. */
-    MatrixStore<int_type> m_matrices;
+    MatrixStore m_matrices;
     /* Best M + close per query column; transpose_best_cell reads it. */
-    MallocRAII<int_type> m_best;
+    MallocRAII<std::int32_t> m_best;
     IA m_hit;
 
     std::size_t m_line_fixed;

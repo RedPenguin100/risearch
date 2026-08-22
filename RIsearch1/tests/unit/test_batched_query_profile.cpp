@@ -72,7 +72,8 @@ TEST(BatchedQueryProfile, HoldsWhatSixteenSingleProfilesHold)
                 EXPECT_EQ(batch.iy_extend(ctx), row.iy_extend) << "ctx " << ctx;
                 for (auto i = 1u; i <= 20; i++) {
                     EXPECT_EQ(pair(batch, ctx, i, BatchedQueryProfile::kMFromM)[lane],
-                              row.m_from_m[i]) << "lane " << lane << " ctx " << ctx << " i " << i;
+                              row.m_from_m[i])
+                        << "lane " << lane << " ctx " << ctx << " i " << i;
                     EXPECT_EQ(pair(batch, ctx, i, BatchedQueryProfile::kMFromIy)[lane],
                               row.m_from_iy[i]);
                     EXPECT_EQ(pair(batch, ctx, i, BatchedQueryProfile::kIyFromM)[lane],
@@ -87,10 +88,12 @@ TEST(BatchedQueryProfile, HoldsWhatSixteenSingleProfilesHold)
                 EXPECT_EQ(solo(batch, t_cur, i, BatchedQueryProfile::kClose)[lane], row.close[i]);
             }
         }
-        /* From 2: a query bulge needs two positions, so the single profile
-           never writes the first two and nothing reads them. */
+        /* The running total of ix_extend, which is what the Ix scan takes out of
+           its candidates and the only form of it either profile keeps. From 2: a
+           query bulge needs two positions, so neither writes the first two. */
+        const auto ix_row = one.row(Profile::context(0, 0));
         for (auto i = 2u; i <= 20; i++) {
-            EXPECT_EQ(batch.ix_extend()[i * kLanes + lane], one.ix_extend()[i])
+            EXPECT_EQ(batch.ix_prefix()[i * kLanes + lane], ix_row.ix_prefix[i])
                 << "lane " << lane << " i " << i;
         }
     }
@@ -115,7 +118,8 @@ TEST(BatchedQueryProfile, ALaneWithNoQueryIsDeadInEveryTerm)
     for (auto lane = 5u; lane < kLanes; lane++) {
         for (auto i = 1u; i <= 20; i++) {
             EXPECT_EQ(pair(batch, 0, i, BatchedQueryProfile::kMFromM)[lane],
-                      BatchedQueryProfile::kDead) << "lane " << lane << " i " << i;
+                      BatchedQueryProfile::kDead)
+                << "lane " << lane << " i " << i;
             EXPECT_EQ(solo(batch, 0, i, BatchedQueryProfile::kMOpen)[lane],
                       BatchedQueryProfile::kDead);
         }
@@ -141,11 +145,13 @@ TEST(BatchedQueryProfile, AShortQueryIsDeadPastItsOwnEnd)
 
     for (auto i = 1u; i <= 12; i++) {
         EXPECT_EQ(pair(batch, Profile::context(0, 1), i, BatchedQueryProfile::kMFromM)[1],
-                  row.m_from_m[i]) << "i " << i;
+                  row.m_from_m[i])
+            << "i " << i;
     }
     for (auto i = 13u; i <= 20; i++) {
         EXPECT_EQ(pair(batch, Profile::context(0, 1), i, BatchedQueryProfile::kMFromM)[1],
-                  BatchedQueryProfile::kDead) << "i " << i;
+                  BatchedQueryProfile::kDead)
+            << "i " << i;
         EXPECT_EQ(solo(batch, 1, i, BatchedQueryProfile::kClose)[1], BatchedQueryProfile::kDead);
     }
     // The longer lane is untouched by its neighbour ending early.
@@ -153,6 +159,7 @@ TEST(BatchedQueryProfile, AShortQueryIsDeadPastItsOwnEnd)
     const auto full_row = full.row(Profile::context(0, 1));
     for (auto i = 1u; i <= 20; i++) {
         EXPECT_EQ(pair(batch, Profile::context(0, 1), i, BatchedQueryProfile::kMFromM)[0],
-                  full_row.m_from_m[i]) << "i " << i;
+                  full_row.m_from_m[i])
+            << "i " << i;
     }
 }

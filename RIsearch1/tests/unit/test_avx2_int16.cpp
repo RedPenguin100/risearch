@@ -34,10 +34,9 @@ __attribute__((target("avx2"))) Row apply2(__m256i (*op)(__m256i, __m256i), cons
                                            const Row& b)
 {
     Row out{};
-    _mm256_storeu_si256(
-        reinterpret_cast<__m256i*>(out.data()),
-        op(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a.data())),
-           _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b.data()))));
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(out.data()),
+                        op(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a.data())),
+                           _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b.data()))));
     return out;
 }
 
@@ -46,10 +45,22 @@ __attribute__((target("avx2"))) Lane reduce(const Row& in)
     return v_hmax<Lane>(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(in.data())));
 }
 
-Row prefix_max(const Row& in) { return apply(v_prefix_max<Lane>, in); }
-Row broadcast_last(const Row& in) { return apply(v_broadcast_last<Lane>, in); }
-Row saturating_add(const Row& a, const Row& b) { return apply2(v_add<Lane>, a, b); }
-Row shifted(const Row& a, const Row& b) { return apply2(v_shifted_left_one<Lane>, a, b); }
+Row prefix_max(const Row& in)
+{
+    return apply(v_prefix_max<Lane>, in);
+}
+Row broadcast_last(const Row& in)
+{
+    return apply(v_broadcast_last<Lane>, in);
+}
+Row saturating_add(const Row& a, const Row& b)
+{
+    return apply2(v_add<Lane>, a, b);
+}
+Row shifted(const Row& a, const Row& b)
+{
+    return apply2(v_shifted_left_one<Lane>, a, b);
+}
 Row add_unless_zero(const Row& a, const Row& b)
 {
     return apply2(v_add_unless_zero_or_neg1<Lane>, a, b);

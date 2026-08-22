@@ -17,18 +17,17 @@
 #include "symbols.h"
 #include "weights.h"
 
-static void fill_char_array(char *buf, std::uint32_t length) {
-    for (auto i = 0u; i < length; i++) {
-        buf[i] = 'X';
-    }
+static void fill_char_array(char* buf, std::uint32_t length)
+{
+    std::memset(buf, 'X', length);
     buf[length] = '\0';
 }
 
 
-static float find_max_value_f(float **M, float **Ix, float **Iy, std::uint32_t *k, std::uint32_t *i, std::size_t j,
-                              std::size_t n,
-                              const short dsm[6][6][6][6], const unsigned char *qseq,
-                              const unsigned char *tseq) {
+static float find_max_value_f(float** M, float** Ix, float** Iy, std::uint32_t* k, std::uint32_t* i,
+                              std::size_t j, std::size_t n, const short dsm[6][6][6][6],
+                              const unsigned char* qseq, const unsigned char* tseq)
+{
     float max = 0.0;
     *i = 0; /*row in which maxval is found */
     *k = 0; /*matrix in which the maximum has been found; 0 1 2 if M Ix Iy */
@@ -50,14 +49,15 @@ static float find_max_value_f(float **M, float **Ix, float **Iy, std::uint32_t *
     return max;
 }
 
-static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &query_sequence,
-                                         const ByteBuffer &target_sequence,
-                                         const float *weights, /*array of weights */
+static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer& query_sequence,
+                                         const ByteBuffer& target_sequence,
+                                         const float* weights,        /*array of weights */
                                          const short dsm[6][6][6][6], /* scoring matrix */
-                                         [[maybe_unused]] IA *, /* pointer to struct, fill results */
-                                         const char *matname) {
-    const auto *qseq = query_sequence.unsigned_data();
-    const auto *tseq = target_sequence.unsigned_data();
+                                         [[maybe_unused]] IA*, /* pointer to struct, fill results */
+                                         const char* matname)
+{
+    const auto* qseq = query_sequence.unsigned_data();
+    const auto* tseq = target_sequence.unsigned_data();
     const auto m = query_sequence.size();
     const auto n = target_sequence.size();
 
@@ -66,15 +66,15 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
 
     std::uint32_t i, j, k;
     float w1, w2;
-    int startpos_found; /* used in backtrack, true if start pos has been reached */
+    int startpos_found;     /* used in backtrack, true if start pos has been reached */
     float mVal, xVal, yVal; /* values coming from M, Ix, Iy. Not possible to start a new alignment
                                at any position, due to the force start. */
 
     /* matrices for alignment scores ending in different states */
-    float **M = allocFloatMatrix(m + 1, n + 1); /* (Mis)Match */
-    float **Ix =
-            allocFloatMatrix(m + 1, n + 1); /* Insertion in x(=query), so x paired to gap (in y) */
-    float **Iy = allocFloatMatrix(m + 1, n + 1); /* Insertion(=bulge) in y(=target) */
+    float** M = allocFloatMatrix(m + 1, n + 1); /* (Mis)Match */
+    float** Ix =
+        allocFloatMatrix(m + 1, n + 1); /* Insertion in x(=query), so x paired to gap (in y) */
+    float** Iy = allocFloatMatrix(m + 1, n + 1); /* Insertion(=bulge) in y(=target) */
 
     Ix[0][0] = Iy[0][0] = 0;
     M[0][0] = force_start_val;
@@ -99,7 +99,7 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
        Handle the (1,1) cell explicitly since the boundary recursion includes (i-2) or (j-2) cases.
      */
     M[1][1] = force_start_val +
-              (float) dsm[GAP][qseq[0]][GAP][tseq[0]]; /*no weight used, first base pair */
+              (float)dsm[GAP][qseq[0]][GAP][tseq[0]]; /*no weight used, first base pair */
     Ix[1][1] = Iy[1][1] = NEGINF;
 
     /* Filling first column */
@@ -108,20 +108,19 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
         /* first letter of target sequence, so it can ONLY come from gapped (upstream nucleotides in
          * query have not been used) */
         M[i][1] =
-                force_start_val +
-                (float)
+            force_start_val +
+            (float)
                 dsm[GAP][qseq[i - 1]][GAP][tseq[0]]; /* MAX(0, ); no weight used, first base pair */
         /* value for Ix matrix, case query sequence paired to gap (k=1) */
-        mVal = /* prev. match, now gap - add (Xi-1, Xi; Y1, -) */
-                M[i - 1][1] != /*adding a gap on top of a bp, weights used */
-                force_start_val
-                    ? M[i - 1][1] + dsm[qseq[i - 2]][qseq[i - 1]][tseq[0]][GAP] * weights[i - 2]
-                    : -1;
-        xVal = /* extending existing gap  - add (Xi-1, Xi; -, -) */
-                Ix[i - 1][1] != 0
-                    ? /*adding a gap on top of a gap, weights used */
-                    Ix[i - 1][1] + dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] * weights[i - 2]
-                    : -1;
+        mVal =             /* prev. match, now gap - add (Xi-1, Xi; Y1, -) */
+            M[i - 1][1] != /*adding a gap on top of a bp, weights used */
+                    force_start_val
+                ? M[i - 1][1] + dsm[qseq[i - 2]][qseq[i - 1]][tseq[0]][GAP] * weights[i - 2]
+                : -1;
+        xVal =                  /* extending existing gap  - add (Xi-1, Xi; -, -) */
+            Ix[i - 1][1] != 0 ? /*adding a gap on top of a gap, weights used */
+                Ix[i - 1][1] + dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] * weights[i - 2]
+                              : -1;
         /* OR start new alignment that starts in gap, reflected by (-, Xi; -, -). Forbidden! */
         /* nVal = dsm[GAP][qseq[i-1]][GAP][GAP]; */
         /*Ix[i][1] = max4(mVal,xVal,nVal,0); */
@@ -136,18 +135,17 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
         /* coming from gap in qseq (Iy-matrix); First letter in query sequence, adding (-, X1; Yj-1,
          * Yj) */
         M[1][j] =
-                dsm[GAP][qseq[0]][GAP][tseq[j - 1]]; /* MAX(0, ); no weight used, first base pair */
+            dsm[GAP][qseq[0]][GAP][tseq[j - 1]]; /* MAX(0, ); no weight used, first base pair */
         /* value for Iy matrix, case target sequence paired to gap (k=2) */
         /*coming from match, opening gap - add (X1, -; Yj-1, Yj) */
         mVal = M[1][j - 1] != /*adding a gap on top of a bp, weights used */
-               0
-                   ? M[1][j - 1] + (float) dsm[qseq[0]][GAP][tseq[j - 2]][tseq[j - 1]] * weights[0]
+                       0
+                   ? M[1][j - 1] + (float)dsm[qseq[0]][GAP][tseq[j - 2]][tseq[j - 1]] * weights[0]
                    : -1;
         /* extending an existing gap - add (-, -; Yj-1, Yj) */
-        yVal = Iy[1][j - 1] != 0
-                   ? /*adding a gap on top of a gap, weights used */
+        yVal = Iy[1][j - 1] != 0 ? /*adding a gap on top of a gap, weights used */
                    Iy[1][j - 1] + dsm[GAP][GAP][tseq[j - 2]][tseq[j - 1]] * weights[0]
-                   : -1;
+                                 : -1;
         /* or start new ali, begin with gap -- forbidden ! */
         /* nVal = dsm[GAP][GAP][GAP][tseq[j-1]]; */
         Iy[1][j] = max3f(mVal, yVal, 0); /*removed nVal option */
@@ -163,54 +161,53 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
             /* coming from a match, add (Xi-1, Xi; Yi-1, Yi) */
             mVal = M[i - 1][j - 1] != 0
                        ? M[i - 1][j - 1] +
-                         ((float) dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] *
-                          weights[i - 2])
+                             ((float)dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] *
+                              weights[i - 2])
                        : -1;
             /* coming from gap in target, add (Xi-1, Xi; -, Yi) */
             xVal =
-                    Ix[i - 1][j - 1] != 0
-                        ? Ix[i - 1][j - 1] +
-                          ((float) dsm[qseq[i - 2]][qseq[i - 1]][GAP][tseq[j - 1]] * weights[i - 2])
-                        : -1;
+                Ix[i - 1][j - 1] != 0
+                    ? Ix[i - 1][j - 1] +
+                          ((float)dsm[qseq[i - 2]][qseq[i - 1]][GAP][tseq[j - 1]] * weights[i - 2])
+                    : -1;
 
             /* coming from gap in query, add (-, Xi; Yi-1, Yi) */
             yVal =
-                    Iy[i - 1][j - 1] != 0
-                        ? Iy[i - 1][j - 1] +
-                          ((float) dsm[GAP][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] * weights[i - 2])
-                        : -1;
+                Iy[i - 1][j - 1] != 0
+                    ? Iy[i - 1][j - 1] +
+                          ((float)dsm[GAP][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] * weights[i - 2])
+                    : -1;
 
             /* starting a new alignment with this pair: (-, Xi; -, Yj) */
             M[i][j] = max4f(mVal, xVal, yVal, 0);
             /* value for Ix matrix, case query paired to gap (k=1) */
             /*coming from match, add (Xi-1, Xi; Yj, -) */
             mVal = /*add a bulge on top of a bp */
-                    M[i - 1][j] != 0
-                        ? M[i - 1][j] +
-                          (float) dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 1]][GAP] * weights[i - 2]
-                        : -1;
+                M[i - 1][j] != 0
+                    ? M[i - 1][j] +
+                          (float)dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 1]][GAP] * weights[i - 2]
+                    : -1;
             /*extend existing gap, add (Xi-1, Xi; -, -) */
             xVal =
-                    Ix[i - 1][j] != 0
-                        ? Ix[i - 1][j] + (float) dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] * weights[i - 2]
-                        : -1;
+                Ix[i - 1][j] != 0
+                    ? Ix[i - 1][j] + (float)dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] * weights[i - 2]
+                    : -1;
             /* start new alignment - starts with gap -> ILLEGAL! */
             /* nVal = dsm[GAP][qseq[i-1]][GAP][GAP]; */
 
             Ix[i][j] = max3f(mVal, xVal, 0); /*removed option nVal */
             /* value for Iy matrix, case target paired to gap (k=2) */
             /*coming from match, add (Xi, -; Yj-1, Yj) */
-            w2 = i - 2 < m - 1 - 1
-                     ? weights[i - 1]
-                     : weights[m - 1 - 1]; /*number of weights=length query -1) */
+            w2 = i - 2 < m - 1 - 1 ? weights[i - 1]
+                                   : weights[m - 1 - 1]; /*number of weights=length query -1) */
             mVal = M[i][j - 1] != 0
-                       ? M[i][j - 1] + (float) dsm[qseq[i - 1]][GAP][tseq[j - 2]][tseq[j - 1]] *
-                         ((weights[i - 2] + w2) / 2)
+                       ? M[i][j - 1] + (float)dsm[qseq[i - 1]][GAP][tseq[j - 2]][tseq[j - 1]] *
+                                           ((weights[i - 2] + w2) / 2)
                        : -1; /*use average of weights for bulges in target */
             /*extend existing gap, add (-, -; Yj-1, Yj) */
             yVal = Iy[i][j - 1] != 0
-                       ? Iy[i][j - 1] + (float) dsm[GAP][GAP][tseq[j - 2]][tseq[j - 1]] *
-                         ((weights[i - 2] + w2) / 2)
+                       ? Iy[i][j - 1] + (float)dsm[GAP][GAP][tseq[j - 2]][tseq[j - 1]] *
+                                            ((weights[i - 2] + w2) / 2)
                        : -1; /* No weight used for continuing bulges */
             /* start new alignment - starts with gap LEGAL!? */
             /* nVal = dsm[GAP][GAP][GAP][tseq[j-1]]; */
@@ -233,11 +230,10 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
 #endif
     printf("***Structures and Energies***\n");
     /*backtrack */
-    for (auto colj = n; colj <= n;
-         colj++) {
+    for (auto colj = n; colj <= n; colj++) {
         /*n is the number of columns, m is the number of rows.  NOTE: here we put colj =
-                             n because we only want the interaction that ends at position n (ends at the 5'
-                             of the target sequence, which is in 3'-5' direction) */
+                             n because we only want the interaction that ends at position n (ends at
+           the 5' of the target sequence, which is in 3'-5' direction) */
         /*printf("%d\n",m);
            printf("%d\n",n); */
 
@@ -273,8 +269,7 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
                     /*printf("means we started alignment at row [%d] col [%d] of matrix %d \n", i,
                      * j, k); */
                     startpos_found = 1;
-                } else if (M[i][j] == (dsm[GAP][qseq[i - 1]][GAP][tseq[j - 1]]) &&
-                           j != 1) {
+                } else if (M[i][j] == (dsm[GAP][qseq[i - 1]][GAP][tseq[j - 1]]) && j != 1) {
                     /*      started new alignment */
                     /*printf("means we started alignment at row [%d] col [%d] of matrix %d \n", i,
                      * j, k); */
@@ -284,21 +279,21 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
                             max3(2000, m * 500, n * 500));
                     exit(1);
                 } else if (M[i][j] ==
-                           M[i - 1][j - 1] +
-                           ((float) dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] *
-                            weights[i - 2]) &&
+                               M[i - 1][j - 1] +
+                                   ((float)dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] *
+                                    weights[i - 2]) &&
                            i != 1 && j != 1) {
                     /*printf("previous was also match\n"); */ /*      previous was also match */
                 } else if (M[i][j] ==
-                           Ix[i - 1][j - 1] + dsm[qseq[i - 2]][qseq[i - 1]][GAP][tseq[j - 1]] *
-                           weights[i - 2] &&
+                               Ix[i - 1][j - 1] + dsm[qseq[i - 2]][qseq[i - 1]][GAP][tseq[j - 1]] *
+                                                      weights[i - 2] &&
                            i != 1) {
                     /*printf("coming from gap in seq2/target\n"); */ /*      coming from gap in
                                                                         seq2/target */
                     k = 1;
                 } else if (M[i][j] ==
-                           Iy[i - 1][j - 1] + dsm[GAP][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] *
-                           weights[i - 2] &&
+                               Iy[i - 1][j - 1] + dsm[GAP][qseq[i - 1]][tseq[j - 2]][tseq[j - 1]] *
+                                                      weights[i - 2] &&
                            j != 1) {
                     /*printf("coming from gap in seq1/query\n"); */ /*      coming from gap in
                                                                        seq1/query */
@@ -323,12 +318,12 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
                 /* seq1(query) paired to a gap (in target). Bulge on top of bp */
                 if (Ix[i][j] ==
                     M[i - 1][j] +
-                    (float) dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 1]][GAP] * weights[i - 2]) {
+                        (float)dsm[qseq[i - 2]][qseq[i - 1]][tseq[j - 1]][GAP] * weights[i - 2]) {
                     k = 0; /* open a new gap coming from match */
                     /*printf("Gap in Ix coming from match %f\n", Ix[i][j]); */
                 } else {
-                    if (Ix[i][j] == Ix[i - 1][j] + (float) dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] *
-                        weights[i - 2]) {
+                    if (Ix[i][j] == Ix[i - 1][j] + (float)dsm[qseq[i - 2]][qseq[i - 1]][GAP][GAP] *
+                                                       weights[i - 2]) {
                         /*gap on top of gap */
                         if (i == 1) {
                             k = 3;
@@ -358,12 +353,12 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
                 }
                 if (Iy[i][j] ==
                     M[i][j - 1] +
-                    (float) dsm[qseq[i - 1]][GAP][tseq[j - 2]][tseq[j - 1]] * ((w1 + w2) / 2)) {
+                        (float)dsm[qseq[i - 1]][GAP][tseq[j - 2]][tseq[j - 1]] * ((w1 + w2) / 2)) {
                     k = 0; /* open a new gap coming from match */
                     /*printf("Gap in Iy coming from match\n"); */
                 } else {
-                    if (Iy[i][j] == Iy[i][j - 1] + (float) dsm[GAP][GAP][tseq[j - 2]][tseq[j - 1]] *
-                        ((w1 + w2) / 2)) {
+                    if (Iy[i][j] == Iy[i][j - 1] + (float)dsm[GAP][GAP][tseq[j - 2]][tseq[j - 1]] *
+                                                       ((w1 + w2) / 2)) {
                         if (j == 1) {
                             k = 3;
                             startpos_found = 1;
@@ -388,7 +383,7 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
                 fprintf(stderr,
                         "Force start option did not work: try to increase the number given to "
                         "-f.\nTry with a number > %d.\n",
-                        (int) max3(2000, m * 200, n * 200));
+                        (int)max3(2000, m * 200, n * 200));
                 exit(1);
             }
         }
@@ -405,13 +400,14 @@ static void RIs_force_start_end_weighted(int force_start_val, const ByteBuffer &
 }
 
 static void RIs_force_start_end_init(
-    int force_start_val, const char *pos_weights,
-    const ByteBuffer &query_sequence_ix, // query sequence - numeric representation
-    const ByteBuffer &target_sequence_ix, // target sequence - numeric representation
-    const short dsm[6][6][6][6], /* scoring matrix */
-    const char *matname /* name of the scoring matrix */
-) {
-    auto testmax = (int) (1.5 * target_sequence_ix.size());
+    int force_start_val, const char* pos_weights,
+    const ByteBuffer& query_sequence_ix,  // query sequence - numeric representation
+    const ByteBuffer& target_sequence_ix, // target sequence - numeric representation
+    const short dsm[6][6][6][6],          /* scoring matrix */
+    const char* matname                   /* name of the scoring matrix */
+)
+{
+    auto testmax = (int)(1.5 * target_sequence_ix.size());
     IA maxHit(testmax);
     ByteBuffer reversed_target;
 
@@ -428,7 +424,7 @@ static void RIs_force_start_end_init(
     if (!strcmp(pos_weights, "CRISPR_20nt_5p_3p")) {
         if (size_wC20_5p_3p < query_sequence_ix.size() - 1) {
             fprintf(stderr, "ERR: the array of weights is too short for the given query.\n Weights "
-                    "length mush be >= than the length of the query -1.\n");
+                            "length mush be >= than the length of the query -1.\n");
             exit(1);
         }
         if (size_wC20_5p_3p == query_sequence_ix.size() - 1) {
@@ -465,8 +461,8 @@ static void RIs_force_start_end_init(
                                      &noweight[0], dsm, &maxHit, matname);
     } else {
         fprintf(stderr, "Undefined weights array. Existing weights verctors are CRISPR_20nt_5p_3p "
-                "and noweights. To add a new weights vector, create an array in weights.c "
-                "and an ad-hoc if clause. Use noweights to set all weights to 1.\n");
+                        "and noweights. To add a new weights vector, create an array in weights.c "
+                        "and an ad-hoc if clause. Use noweights to set all weights to 1.\n");
         exit(1);
     }
 }

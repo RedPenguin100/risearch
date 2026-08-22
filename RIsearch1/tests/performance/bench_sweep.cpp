@@ -18,10 +18,10 @@
 #include <string>
 #include <vector>
 
-#include "cli/cli.h"
-#include "dsm.h"
 #include "align/QueryBatch.h"
 #include "align/linspace.h"
+#include "cli/cli.h"
+#include "dsm.h"
 #include "memory/ByteBuffer.hpp"
 
 namespace {
@@ -141,7 +141,8 @@ double measure_batched(int min_score, int repeats)
     testing::internal::GetCapturedStdout();
 
     const double seconds = std::chrono::duration<double>(elapsed).count();
-    const double cells = static_cast<double>(repeats) * kBatchQueries * kQueryLength * kTargetLength;
+    const double cells =
+        static_cast<double>(repeats) * kBatchQueries * kQueryLength * kTargetLength;
     return cells / seconds;
 }
 

@@ -27,6 +27,35 @@
 #include "avx2/primitives.h"
 
 
+/* What a row leaves behind once its columns are done: the run entries at this
+ * target position, and the query's best so far.
+ *
+ * The column the row max was reached at is recovered by rescanning the row
+ * rather than tracked alongside the max, because it is read only where the row
+ * clears the threshold or improves on the query's best -- which almost no row
+ * does, while every row would have paid for tracking it.
+ */
+template<typename int_type>
+__attribute__((always_inline)) static inline void
+record_row(const int_type* m_row, const typename QueryProfile<int_type>::RowView& T, unsigned m,
+           int row_max, unsigned j, int threshold, int* hs, int* hp, RunningMax& running_max)
+{
+    auto row_pos = 1u;
+    if (row_max > threshold || row_max > running_max.score) {
+        for (auto i = 1u; i <= m; ++i) {
+            if (m_row[i] + T.close[i] == row_max) {
+                row_pos = i;
+                break;
+            }
+        }
+    }
+
+    hs[j - 1] = row_max;
+    hp[j - 1] = static_cast<int>(row_pos);
+    running_max.set_if_better(row_max, static_cast<int>(row_pos), static_cast<int>(j));
+}
+
+
 /* Inlined into the caller on purpose: there the rows and the profile's tables
    are visibly separate allocations, and out of line the compiler has to assume a
    store through one could land in the other and re-load everything per row. */
@@ -107,21 +136,7 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int
                 Ix[currentRow][i - 1] + T.ix_extend[i]);
         }
 
-        // Re-infer the row max's position
-        auto row_pos = 1u;
-        if (row_max > threshold || row_max > running_max.score) {
-            for (auto i = 1u; i <= m; ++i) {
-                if (M[currentRow][i] + T.close[i] == row_max) {
-                    row_pos = i;
-                    break;
-                }
-            }
-        }
-
-        hs[j - 1] = row_max;
-        hp[j - 1] = static_cast<int>(row_pos);
-
-        running_max.set_if_better(row_max, static_cast<int>(row_pos), j);
+        record_row<int_type>(M[currentRow], T, m, row_max, j, threshold, hs, hp, running_max);
 
     } /*next row j */
 }
@@ -294,21 +309,7 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
         /* End main DP */
 
 
-        // Re-infer the row max's position
-        auto row_pos = 1u;
-        if (row_max > threshold || row_max > running_max.score) {
-            for (auto i = 1u; i <= m; ++i) {
-                if (m_cur[i] + T.close[i] == row_max) {
-                    row_pos = i;
-                    break;
-                }
-            }
-        }
-
-        hs[j - 1] = row_max;
-        hp[j - 1] = static_cast<int>(row_pos);
-
-        running_max.set_if_better(row_max, static_cast<int>(row_pos), j);
+        record_row<int_type>(m_cur, T, m, row_max, j, threshold, hs, hp, running_max);
 
         /* The row just written becomes the row read. */
         std::swap(m_cur, m_last);

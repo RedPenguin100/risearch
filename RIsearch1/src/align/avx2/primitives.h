@@ -105,8 +105,8 @@ __attribute__((target("avx2"), always_inline)) static inline void v_vec_store(in
     _mm256_storeu_si256(reinterpret_cast<__m256i*>(p), v);
 }
 
-/* The scalar operations of the recurrence, eight lanes at a time. vmax4 mirrors
-   max4, and add_unless_zero_or_neg1 is the `x != 0 ? x + term : -1` test -- no
+/* The scalar operations of the recurrence, eight lanes at a time. v_max4 mirrors
+   max4, and v_add_unless_zero_or_neg1 is the `x != 0 ? x + term : -1` test -- no
    lane can branch, so both arms are computed and one is selected per lane. */
 template<>
 __attribute__((target("avx2"), always_inline)) inline __m256i v_add<std::int32_t>(__m256i a,

@@ -333,10 +333,13 @@ private:
         }
         const std::int16_t* hs16 = m_hs16.get();
         const std::int16_t* hp16 = m_hp16.get();
+
+        /* j stays in scope so the tail can resume where the blocks stopped: the
+           target positions past the last whole sixteen go one at a time. */
         auto j = 0;
         for (; j + static_cast<int>(kQueries) <= n; j += kQueries) {
-            transpose_to_queries(hs16, hs_query, m_count);
-            transpose_to_queries(hp16, hp_query, m_count);
+            v_transpose16x16(hs16, hs_query, m_count);
+            v_transpose16x16(hp16, hp_query, m_count);
             hs16 += kQueries * kQueries;
             hp16 += kQueries * kQueries;
             for (auto k = 0u; k < m_count; k++) {

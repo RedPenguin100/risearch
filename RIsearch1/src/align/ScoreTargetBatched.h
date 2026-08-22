@@ -78,19 +78,6 @@ row_max_position(const std::int16_t* m_cur, const BatchedQueryProfile::RowView& 
     return pos;
 }
 
-/* Sixteen target positions of sixteen queries, turned into sixteen queries of
- * sixteen target positions.
- *
- * The sweep writes a row's scores together because that is the order it has them
- * in; the reporting reads one lane's whole run, so one of the two has to be
- * transposed. out[l] receives target positions 0..15 of query l.
- */
-__attribute__((target("avx2"), always_inline)) static inline void
-transpose_to_queries(const std::int16_t* by_target, std::int16_t* const* out, unsigned queries)
-{
-    v_transpose16x16(by_target, out, queries);
-}
-
 /* M and Iy for one column, sixteen queries at a time, and the column's
    contribution to the row max. Mirrors main_dp_loop_avx2, which does the same
    for eight columns of one query. */

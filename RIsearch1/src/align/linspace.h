@@ -88,19 +88,20 @@ RIs_linSpace(const ByteBuffer& query_sequence_ix,  // query sequence numerical r
      * The first row can only hold 1nt, so NN terms only now begin to apply.
      */
 
-    // hs[j - 1] and hp[j - 1] hold the best alignment ending at pos j
-    int* const hs = hits_score.get();
-    int* const hp = hits_pos.get();
+    // run_scores[j - 1] and run_positions[j - 1] hold the best alignment ending at pos j
+    int* const run_scores = hits_score.get();
+    int* const run_positions = hits_pos.get();
 
-    hs[0] = running_row_max.score;
-    hp[0] = running_row_max.pos_i;
+    run_scores[0] = running_row_max.score;
+    run_positions[0] = running_row_max.pos_i;
 
 
-    score_target<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold, running_max);
+    score_target<int_type>(target_sequence, profile, M, Ix, Iy, run_scores, run_positions, n,
+                           threshold, running_max);
 
 
     const QueryProfile<std::int32_t> wide_profile(query_sequence, m, dsm, has_positive_gap(dsm));
     HitReporter reporter(query_sequence, target_sequence, n, wide_profile, config, qname, tname);
 
-    reporter.report_sweep(hs, hp, threshold, running_max);
+    reporter.report_sweep(run_scores, run_positions, threshold, running_max);
 }

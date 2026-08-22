@@ -15,7 +15,7 @@
  * alignment.
  *
  * For every target position it records the best score of an alignment ending
- * there and the query position it ended at -- hs and hp below -- and keeps the
+ * there and the query position it ended at -- run_scores and run_positions below -- and keeps the
  * single best across the whole target. It reconstructs nothing; that is RIs.
  *
  * score_target_scalar is the reference and the definition of what the output
@@ -38,7 +38,8 @@
 template<typename int_type>
 __attribute__((always_inline)) static inline void
 record_row(const int_type* m_row, const typename QueryProfile<int_type>::RowView& T, unsigned m,
-           int row_max, unsigned j, int threshold, int* hs, int* hp, RunningMax& running_max)
+           int row_max, unsigned j, int threshold, int* run_scores, int* run_positions,
+           RunningMax& running_max)
 {
     auto row_pos = 1u;
     if (row_max > threshold || row_max > running_max.score) {
@@ -50,8 +51,8 @@ record_row(const int_type* m_row, const typename QueryProfile<int_type>::RowView
         }
     }
 
-    hs[j - 1] = row_max;
-    hp[j - 1] = static_cast<int>(row_pos);
+    run_scores[j - 1] = row_max;
+    run_positions[j - 1] = static_cast<int>(row_pos);
     running_max.set_if_better(row_max, static_cast<int>(row_pos), static_cast<int>(j));
 }
 
@@ -62,8 +63,8 @@ record_row(const int_type* m_row, const typename QueryProfile<int_type>::RowView
 template<typename int_type>
 __attribute__((always_inline)) static inline void
 score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
-                    int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
-                    std::size_t n, int threshold, RunningMax& running_max)
+                    int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* run_scores,
+                    int* run_positions, std::size_t n, int threshold, RunningMax& running_max)
 {
     const auto m = profile.query_length();
 
@@ -136,7 +137,8 @@ score_target_scalar(const unsigned char* target_sequence, const QueryProfile<int
                 Ix[currentRow][i - 1] + T.ix_extend[i]);
         }
 
-        record_row<int_type>(M[currentRow], T, m, row_max, j, threshold, hs, hp, running_max);
+        record_row<int_type>(M[currentRow], T, m, row_max, j, threshold, run_scores, run_positions,
+                             running_max);
 
     } /*next row j */
 }
@@ -242,8 +244,8 @@ ix_dp_loop_avx2(int_type* ix_out, const int_type* ix_from_m_scan, const int_type
 template<typename int_type>
 __attribute__((target("avx2"))) static void
 score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
-                  int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
-                  std::size_t n, int threshold, RunningMax& running_max)
+                  int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* run_scores,
+                  int* run_positions, std::size_t n, int threshold, RunningMax& running_max)
 {
     const auto m = profile.query_length();
 
@@ -309,7 +311,8 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
         /* End main DP */
 
 
-        record_row<int_type>(m_cur, T, m, row_max, j, threshold, hs, hp, running_max);
+        record_row<int_type>(m_cur, T, m, row_max, j, threshold, run_scores, run_positions,
+                             running_max);
 
         /* The row just written becomes the row read. */
         std::swap(m_cur, m_last);
@@ -326,23 +329,23 @@ score_target_avx2(const unsigned char* target_sequence, const QueryProfile<int_t
 template<typename int_type>
 __attribute__((always_inline)) static inline void
 score_target(const unsigned char* target_sequence, const QueryProfile<int_type>& profile,
-             int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* hs, int* hp,
-             std::size_t n, int threshold, RunningMax& running_max)
+             int_type* const* M, int_type* const* Ix, int_type* const* Iy, int* run_scores,
+             int* run_positions, std::size_t n, int threshold, RunningMax& running_max)
 {
 #if RISEARCH1_HAS_AVX2
     // No upside from using AVX2 for small target sizes
     if (profile.query_length() <= v_lanes<int_type>()) {
-        score_target_scalar<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
-                                      running_max);
+        score_target_scalar<int_type>(target_sequence, profile, M, Ix, Iy, run_scores,
+                                      run_positions, n, threshold, running_max);
         return;
     }
     // Only use AVX2 if the CPU supports
     if (CPU_HAS_AVX2) {
-        score_target_avx2<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
-                                    running_max);
+        score_target_avx2<int_type>(target_sequence, profile, M, Ix, Iy, run_scores, run_positions,
+                                    n, threshold, running_max);
         return;
     }
 #endif
-    score_target_scalar<int_type>(target_sequence, profile, M, Ix, Iy, hs, hp, n, threshold,
-                                  running_max);
+    score_target_scalar<int_type>(target_sequence, profile, M, Ix, Iy, run_scores, run_positions, n,
+                                  threshold, running_max);
 }
